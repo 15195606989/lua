@@ -1,5 +1,0 @@
-local plr=game.Players.LocalPlayer
-local char=plr.Character or plr.CharacterAdded:Wait()
-local root=char:WaitForChild("HumanoidRootPart")
-local hum=char:WaitForChild("Humanoid")
-local cam=workspace.Cu[...]
