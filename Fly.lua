@@ -172,6 +172,7 @@ btnFly.MouseButton1Click:Connect(function()
             if p:IsA("BasePart")then p.CanCollide=false end
         end
         antiGrav(true)
+        root.AssemblyLinearVelocity=Vector3.new(0,100,0)
         btnUp.Visible=true
         btnDown.Visible=true
         hideJump()
