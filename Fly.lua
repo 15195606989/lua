@@ -157,11 +157,6 @@ btnMinimize.MouseButton1Click:Connect(function()
     miniIcon.Visible=true
 end)
 
-miniIcon.MouseButton1Click:Connect(function()
-    panel.Visible=true
-    miniIcon.Visible=false
-end)
-
 local flyOn=false
 local flySpeed=60
 local upH=false
@@ -216,7 +211,6 @@ local function antiGrav(on)
         agForce.Parent=root
     end
 end
-
 btnFly.MouseButton1Click:Connect(function()
     flyOn=not flyOn
     if flyOn then
@@ -291,18 +285,11 @@ game:GetService("RunService").Heartbeat:Connect(function(dt)
     hum.PlatformStand=true
     root.Velocity=Vector3.new(0,0,0)
     root.AssemblyLinearVelocity=Vector3.new(0,0,0)
-    
-    -- 完整方向（含上下）
     local fullDir=(cam.CFrame.Position-root.Position).Unit
-    -- 水平方向（用于移动）
     local hDir=Vector3.new(fullDir.X,0,fullDir.Z).Unit
-    
-    -- 朝向：含上下倾斜
     if fullDir.Magnitude>0.01 then
         root.CFrame=CFrame.new(root.Position,root.Position-fullDir)
     end
-    
-    -- 移动：用水平方向
     local mv=hum.MoveDirection
     local fw=hDir
     local rt=Vector3.new(-hDir.Z,0,hDir.X)
@@ -331,4 +318,30 @@ plr.CharacterAdded:Connect(function(c)
     btnUp.Visible=false
     btnDown.Visible=false
     showJump()
+end)
+
+if not getgenv().NDS_UI then
+    getgenv().NDS_UI={
+        panels={},
+        register=function(name,hideFn,showFn)
+            getgenv().NDS_UI.panels[name]={hide=hideFn,show=showFn}
+        end,
+        showOnly=function(name)
+            for n,p in pairs(getgenv().NDS_UI.panels)do
+                if n==name then p.show()else p.hide()end
+            end
+        end
+    }
+end
+
+getgenv().NDS_UI.register("Fly",function()
+    panel.Visible=false
+    miniIcon.Visible=true
+end,function()
+    panel.Visible=true
+    miniIcon.Visible=false
+end)
+
+miniIcon.MouseButton1Click:Connect(function()
+    getgenv().NDS_UI.showOnly("Fly")
 end)
