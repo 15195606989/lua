@@ -285,11 +285,23 @@ game:GetService("RunService").Heartbeat:Connect(function(dt)
     hum.PlatformStand=true
     root.Velocity=Vector3.new(0,0,0)
     root.AssemblyLinearVelocity=Vector3.new(0,0,0)
-    local fullDir=(cam.CFrame.Position-root.Position).Unit
-    local hDir=Vector3.new(fullDir.X,0,fullDir.Z).Unit
-    if fullDir.Magnitude>0.01 then
-        root.CFrame=CFrame.new(root.Position,root.Position-fullDir)
+    
+    local camPos=cam.CFrame.Position
+    local rootPos=root.Position
+    local dist=(camPos-rootPos).Magnitude
+    
+    local fullDir
+    if dist<1.5 then
+        fullDir=cam.CFrame.LookVector
+    else
+        fullDir=(camPos-rootPos).Unit
     end
+    
+    local hDir=Vector3.new(fullDir.X,0,fullDir.Z).Unit
+    if hDir.Magnitude>0.01 then
+        root.CFrame=CFrame.new(rootPos,rootPos-fullDir)
+    end
+    
     local mv=hum.MoveDirection
     local fw=hDir
     local rt=Vector3.new(-hDir.Z,0,hDir.X)
