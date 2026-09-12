@@ -12,7 +12,7 @@ gui.ResetOnSpawn=false
 
 local miniIcon=Instance.new("TextButton")
 miniIcon.Size=UDim2.new(0,28,0,28)
-miniIcon.Position=UDim2.new(1,-35,0,40)
+miniIcon.Position=UDim2.new(1,-35,0,45)
 miniIcon.BackgroundColor3=Color3.new(0.8,0.6,0.1)
 miniIcon.BackgroundTransparency=0.2
 miniIcon.BorderSizePixel=0
@@ -25,7 +25,7 @@ miniIcon.Visible=false
 
 local panel=Instance.new("Frame")
 panel.Size=UDim2.new(0,140,0,110)
-panel.Position=UDim2.new(1,-150,0.5,70)
+panel.Position=UDim2.new(1,-150,0,45)
 panel.BackgroundColor3=Color3.new(0.08,0.1,0.16)
 panel.BackgroundTransparency=0.1
 panel.BorderSizePixel=1
@@ -129,11 +129,6 @@ btnMinimize.MouseButton1Click:Connect(function()
     miniIcon.Visible=true
 end)
 
-miniIcon.MouseButton1Click:Connect(function()
-    panel.Visible=true
-    miniIcon.Visible=false
-end)
-
 local speedOn=false
 local speedVal=50
 local originalSpeed=16
@@ -154,7 +149,6 @@ local function setupHold(btn,cb)
     btn.MouseButton1Up:Connect(function()holding=false end)
     btn.MouseLeave:Connect(function()holding=false end)
 end
-
 btnSpeed.MouseButton1Click:Connect(function()
     speedOn=not speedOn
     if speedOn then
@@ -200,4 +194,30 @@ plr.CharacterAdded:Connect(function(c)
     speedOn=false
     btnSpeed.Text="🔴 疾跑: 关"
     btnSpeed.BackgroundColor3=Color3.new(0.6,0.1,0.1)
+end)
+
+if not getgenv().NDS_UI then
+    getgenv().NDS_UI={
+        panels={},
+        register=function(name,hideFn,showFn)
+            getgenv().NDS_UI.panels[name]={hide=hideFn,show=showFn}
+        end,
+        showOnly=function(name)
+            for n,p in pairs(getgenv().NDS_UI.panels)do
+                if n==name then p.show()else p.hide()end
+            end
+        end
+    }
+end
+
+getgenv().NDS_UI.register("Speed",function()
+    panel.Visible=false
+    miniIcon.Visible=true
+end,function()
+    panel.Visible=true
+    miniIcon.Visible=false
+end)
+
+miniIcon.MouseButton1Click:Connect(function()
+    getgenv().NDS_UI.showOnly("Speed")
 end)
