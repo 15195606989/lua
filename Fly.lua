@@ -81,9 +81,65 @@ btnClose.TextSize=14
 btnClose.Font=Enum.Font.GothamBold
 btnClose.Parent=panel
 
+-- 上升/下降键
+local btnUp=Instance.new("TextButton")
+btnUp.Size=UDim2.new(0,55,0,55)
+btnUp.Position=UDim2.new(1,-65,0.65,0)
+btnUp.BackgroundColor3=Color3.new(0.1,0.5,0.2)
+btnUp.BackgroundTransparency=0.3
+btnUp.BorderSizePixel=0
+btnUp.Text="⬆"
+btnUp.TextColor3=Color3.new(1,1,1)
+btnUp.TextSize=22
+btnUp.Font=Enum.Font.GothamBold
+btnUp.Parent=gui
+btnUp.Visible=false
+
+local btnDown=Instance.new("TextButton")
+btnDown.Size=UDim2.new(0,55,0,55)
+btnDown.Position=UDim2.new(1,-65,0.65,60)
+btnDown.BackgroundColor3=Color3.new(0.5,0.1,0.1)
+btnDown.BackgroundTransparency=0.3
+btnDown.BorderSizePixel=0
+btnDown.Text="⬇"
+btnDown.TextColor3=Color3.new(1,1,1)
+btnDown.TextSize=22
+btnDown.Font=Enum.Font.GothamBold
+btnDown.Parent=gui
+btnDown.Visible=false
+
 local flyOn=false
 local flySpeed=60
+local upHeld=false
+local downHeld=false
 local antiGravForce=nil
+
+-- 隐藏跳跃键
+local function hideJump()
+    local jump=plr.PlayerGui:FindFirstChild("JumpButton")or plr.PlayerGui:FindFirstChild("Jump")
+    if not jump then
+        for _,child in pairs(plr.PlayerGui:GetChildren())do
+            if child.Name:lower():find("jump")then
+                jump=child
+                break
+            end
+        end
+    end
+    if jump then jump.Visible=false end
+end
+
+local function showJump()
+    local jump=plr.PlayerGui:FindFirstChild("JumpButton")or plr.PlayerGui:FindFirstChild("Jump")
+    if not jump then
+        for _,child in pairs(plr.PlayerGui:GetChildren())do
+            if child.Name:lower():find("jump")then
+                jump=child
+                break
+            end
+        end
+    end
+    if jump then jump.Visible=true end
+end
 
 local function createAntiGrav()
     if antiGravForce then antiGravForce:Destroy()end
@@ -110,6 +166,9 @@ btnFly.MouseButton1Click:Connect(function()
             if p:IsA("BasePart")then p.CanCollide=false end
         end
         createAntiGrav()
+        btnUp.Visible=true
+        btnDown.Visible=true
+        hideJump()
     else
         btnFly.Text="🔴 飞行: 关"
         btnFly.BackgroundColor3=Color3.new(0.6,0.1,0.1)
@@ -119,8 +178,21 @@ btnFly.MouseButton1Click:Connect(function()
             if p:IsA("BasePart")then p.CanCollide=true end
         end
         removeAntiGrav()
+        btnUp.Visible=false
+        btnDown.Visible=false
+        upHeld=false
+        downHeld=false
+        showJump()
     end
 end)
+
+btnUp.MouseButton1Down:Connect(function()if flyOn then upHeld=true end end)
+btnUp.MouseButton1Up:Connect(function()upHeld=false end)
+btnUp.MouseLeave:Connect(function()upHeld=false end)
+
+btnDown.MouseButton1Down:Connect(function()if flyOn then downHeld=true end end)
+btnDown.MouseButton1Up:Connect(function()downHeld=false end)
+btnDown.MouseLeave:Connect(function()downHeld=false end)
 
 btnMinus.MouseButton1Click:Connect(function()
     flySpeed=math.max(10,flySpeed-10)
@@ -140,6 +212,7 @@ btnClose.MouseButton1Click:Connect(function()
             if p:IsA("BasePart")then p.CanCollide=true end
         end
         removeAntiGrav()
+        showJump()
     end
     gui:Destroy()
 end)
@@ -169,9 +242,13 @@ game:GetService("RunService").Heartbeat:Connect(function(dt)
     
     local mv=(right*move:Dot(right)+fwd*move:Dot(fwd))*flySpeed*dt
     
-    if move.Magnitude<0.1 then
-        root.CFrame=root.CFrame
-    else
+    if upHeld then
+        mv=mv+up*flySpeed*dt
+    elseif downHeld then
+        mv=mv-up*flySpeed*dt
+    end
+    
+    if mv.Magnitude>0 then
         root.CFrame=root.CFrame+mv
     end
 end)
@@ -182,6 +259,11 @@ plr.CharacterAdded:Connect(function(c)
     hum=char:WaitForChild("Humanoid")
     flyOn=false
     antiGravForce=nil
+    upHeld=false
+    downHeld=false
     btnFly.Text="🔴 飞行: 关"
     btnFly.BackgroundColor3=Color3.new(0.6,0.1,0.1)
+    btnUp.Visible=false
+    btnDown.Visible=false
+    showJump()
 end)
