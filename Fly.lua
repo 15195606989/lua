@@ -3,6 +3,7 @@ local char=plr.Character or plr.CharacterAdded:Wait()
 local root=char:WaitForChild("HumanoidRootPart")
 local hum=char:WaitForChild("Humanoid")
 local cam=workspace.CurrentCamera
+local UIS=game:GetService("UserInputService")
 
 if plr.PlayerGui:FindFirstChild("FLY_UI")then plr.PlayerGui.FLY_UI:Destroy()end
 
@@ -18,15 +19,39 @@ panel.BackgroundColor3=Color3.new(0.08,0.1,0.16)
 panel.BackgroundTransparency=0.1
 panel.BorderSizePixel=1
 panel.Parent=gui
+panel.Active=true
 
-local title=Instance.new("TextLabel")
+local title=Instance.new("TextButton")
 title.Size=UDim2.new(1,0,0,25)
-title.Text="✈️ 飞行"
+title.Text="✈️ 飞行 (长按拖动)"
 title.TextColor3=Color3.new(0.6,0.85,1)
-title.TextSize=13
+title.TextSize=11
 title.Font=Enum.Font.GothamBold
 title.BackgroundTransparency=1
 title.Parent=panel
+
+local dragging=false
+local dragStart=nil
+local startPos=nil
+
+title.MouseButton1Down:Connect(function()
+    dragging=true
+    dragStart=Vector2.new(title.AbsolutePosition.X,title.AbsolutePosition.Y)
+    startPos=panel.Position
+end)
+
+UIS.InputChanged:Connect(function(input)
+    if dragging and (input.UserInputType==Enum.UserInputType.MouseMovement or input.UserInputType==Enum.UserInputType.Touch)then
+        local delta=Vector2.new(input.Position.X,input.Position.Y)-dragStart
+        panel.Position=UDim2.new(startPos.X.Scale,startPos.X.Offset+delta.X,startPos.Y.Scale,startPos.Y.Offset+delta.Y)
+    end
+end)
+
+UIS.InputEnded:Connect(function(input)
+    if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then
+        dragging=false
+    end
+end)
 
 local btnFly=Instance.new("TextButton")
 btnFly.Size=UDim2.new(0.9,0,0,30)
@@ -81,7 +106,6 @@ btnClose.TextSize=14
 btnClose.Font=Enum.Font.GothamBold
 btnClose.Parent=panel
 
--- 上升下降键
 local btnUp=Instance.new("TextButton")
 btnUp.Size=UDim2.new(0,55,0,55)
 btnUp.Position=UDim2.new(1,-65,0.5,0)
@@ -115,6 +139,24 @@ local flySpeed=60
 local upHeld=false
 local downHeld=false
 local antiGravForce=nil
+local healConn=nil
+
+local function setupHold(btn,callback,delayTime)
+    local holding=false
+    btn.MouseButton1Down:Connect(function()
+        holding=true
+        callback()
+        task.spawn(function()
+            task.wait(delayTime or 0.3)
+            while holding do
+                task.wait(0.05)
+                if holding then callback()end
+            end
+        end)
+    end)
+    btn.MouseButton1Up:Connect(function()holding=false end)
+    btn.MouseLeave:Connect(function()holding=false end)
+end
 
 local function findJump()
     local ok,jump=pcall(function()
@@ -122,26 +164,22 @@ local function findJump()
     end)
     if ok and jump then return jump end
     for _,child in pairs(plr.PlayerGui:GetChildren())do
-        if child.Name:lower():find("jump")then
-            return child
-        end
+        if child.Name:lower():find("jump")then return child end
     end
     for _,child in pairs(plr.PlayerGui:GetDescendants())do
-        if child.Name:lower():find("jump")then
-            return child
-        end
+        if child.Name:lower():find("jump")then return child end
     end
     return nil
 end
 
 local function hideJump()
-    local jump=findJump()
-    if jump then jump.Visible=false end
+    local j=findJump()
+    if j then j.Visible=false end
 end
 
 local function showJump()
-    local jump=findJump()
-    if jump then jump.Visible=true end
+    local j=findJump()
+    if j then j.Visible=true end
 end
 
 local function createAntiGrav()
@@ -158,11 +196,35 @@ local function removeAntiGrav()
     end
 end
 
+-- 防摔死：临时无敌 + 禁用摔落状态
+local function startInvincible()
+    if healConn then healConn:Disconnect()end
+    hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown,false)
+    hum.Health=hum.MaxHealth
+    healConn=game:GetService("RunService").Heartbeat:Connect(function()
+        if hum then hum.Health=hum.MaxHealth end
+    end)
+    task.delay(1.5,function()
+        if healConn then
+            healConn:Disconnect()
+            healConn=nil
+        end
+    end)
+end
+
+local function endInvincible()
+    if healConn then
+        healConn:Disconnect()
+        healConn=nil
+    end
+end
+
 btnFly.MouseButton1Click:Connect(function()
     flyOn=not flyOn
     if flyOn then
         btnFly.Text="🟢 飞行: 开"
         btnFly.BackgroundColor3=Color3.new(0,0.5,0.1)
+        startInvincible()
         hum.PlatformStand=true
         hum.JumpPower=0
         for _,p in pairs(char:GetDescendants())do
@@ -186,6 +248,9 @@ btnFly.MouseButton1Click:Connect(function()
         upHeld=false
         downHeld=false
         showJump()
+        task.delay(1.5,function()
+            if hum then hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown,true)end
+        end)
     end
 end)
 
@@ -197,15 +262,15 @@ btnDown.MouseButton1Down:Connect(function()if flyOn then downHeld=true end end)
 btnDown.MouseButton1Up:Connect(function()downHeld=false end)
 btnDown.MouseLeave:Connect(function()downHeld=false end)
 
-btnMinus.MouseButton1Click:Connect(function()
-    flySpeed=math.max(10,flySpeed-10)
+setupHold(btnMinus,function()
+    flySpeed=math.max(10,flySpeed-5)
     speedLabel.Text="速度: "..flySpeed
-end)
+end,0.4)
 
-btnPlus.MouseButton1Click:Connect(function()
-    flySpeed=math.min(500,flySpeed+10)
+setupHold(btnPlus,function()
+    flySpeed=math.min(500,flySpeed+5)
     speedLabel.Text="速度: "..flySpeed
-end)
+end,0.4)
 
 btnClose.MouseButton1Click:Connect(function()
     if flyOn then
@@ -216,6 +281,9 @@ btnClose.MouseButton1Click:Connect(function()
         end
         removeAntiGrav()
         showJump()
+        task.delay(1.5,function()
+            if hum then hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown,true)end
+        end)
     end
     gui:Destroy()
 end)
@@ -264,6 +332,10 @@ plr.CharacterAdded:Connect(function(c)
     antiGravForce=nil
     upHeld=false
     downHeld=false
+    if healConn then
+        healConn:Disconnect()
+        healConn=nil
+    end
     btnFly.Text="🔴 飞行: 关"
     btnFly.BackgroundColor3=Color3.new(0.6,0.1,0.1)
     btnUp.Visible=false
