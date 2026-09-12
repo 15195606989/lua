@@ -234,15 +234,11 @@ game:GetService("RunService").Heartbeat:Connect(function(dt)
     hum.PlatformStand=true
     root.Velocity=Vector3.new(0,0,0)
     root.AssemblyLinearVelocity=Vector3.new(0,0,0)
-    
     local ld=(cam.CFrame.Position-root.Position).Unit
     ld=Vector3.new(ld.X,0,ld.Z).Unit
-    
-    -- 只调朝向，不倾斜
     if ld.Magnitude>0.01 then
         root.CFrame=CFrame.new(root.Position,root.Position-ld)
     end
-    
     local mv=hum.MoveDirection
     local fw=root.CFrame.LookVector
     local rt=root.CFrame.RightVector
