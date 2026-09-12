@@ -289,17 +289,18 @@ game:GetService("RunService").Heartbeat:Connect(function(dt)
     local camPos=cam.CFrame.Position
     local rootPos=root.Position
     local camToRoot=camPos-rootPos
+    local isFirstPerson=camToRoot.Magnitude<2.5
     
-    local fullDir
-    if camToRoot.Magnitude>2.5 then
-        fullDir=camToRoot.Unit
+    local hDir
+    if isFirstPerson then
+        local look=cam.CFrame.LookVector
+        hDir=Vector3.new(look.X,0,look.Z).Unit
     else
-        fullDir=cam.CFrame.LookVector
-    end
-    
-    local hDir=Vector3.new(fullDir.X,0,fullDir.Z).Unit
-    if hDir.Magnitude>0.01 then
-        root.CFrame=CFrame.new(rootPos,rootPos-fullDir)
+        local fullDir=camToRoot.Unit
+        hDir=Vector3.new(fullDir.X,0,fullDir.Z).Unit
+        if hDir.Magnitude>0.01 then
+            root.CFrame=CFrame.new(rootPos,rootPos-fullDir)
+        end
     end
     
     local mv=hum.MoveDirection
