@@ -11,7 +11,7 @@ gui.ResetOnSpawn=false
 
 local miniIcon=Instance.new("TextButton")
 miniIcon.Size=UDim2.new(0,28,0,28)
-miniIcon.Position=UDim2.new(1,-35,0,70)
+miniIcon.Position=UDim2.new(1,-35,0,80)
 miniIcon.BackgroundColor3=Color3.new(0.5,0.2,0.6)
 miniIcon.BackgroundTransparency=0.2
 miniIcon.BorderSizePixel=0
@@ -24,7 +24,7 @@ miniIcon.Visible=false
 
 local panel=Instance.new("Frame")
 panel.Size=UDim2.new(0,140,0,90)
-panel.Position=UDim2.new(1,-150,0.5,190)
+panel.Position=UDim2.new(1,-150,0,80)
 panel.BackgroundColor3=Color3.new(0.08,0.1,0.16)
 panel.BackgroundTransparency=0.1
 panel.BorderSizePixel=1
@@ -108,11 +108,6 @@ btnMinimize.MouseButton1Click:Connect(function()
     miniIcon.Visible=true
 end)
 
-miniIcon.MouseButton1Click:Connect(function()
-    panel.Visible=true
-    miniIcon.Visible=false
-end)
-
 local rainbow={
     Color3.fromRGB(255,80,80),
     Color3.fromRGB(255,160,60),
@@ -158,7 +153,6 @@ local function mkESP(p)
     hl.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop
     hl.Parent=p.Character
     
-    -- Roblox 默认样式血条
     local bg=Instance.new("BillboardGui")
     bg.Name="ESP_HealthBar"
     bg.Size=UDim2.new(0,100,0,20)
@@ -212,7 +206,6 @@ local function mkESP(p)
     
     espObjects[p]={hl=hl,bg=bg}
 end
-
 local function rmESP(p)
     if espObjects[p]then
         if espObjects[p].hl then espObjects[p].hl:Destroy()end
@@ -285,4 +278,30 @@ plr.CharacterAdded:Connect(function()
         clearAll()
         refreshAll()
     end
+end)
+
+if not getgenv().NDS_UI then
+    getgenv().NDS_UI={
+        panels={},
+        register=function(name,hideFn,showFn)
+            getgenv().NDS_UI.panels[name]={hide=hideFn,show=showFn}
+        end,
+        showOnly=function(name)
+            for n,p in pairs(getgenv().NDS_UI.panels)do
+                if n==name then p.show()else p.hide()end
+            end
+        end
+    }
+end
+
+getgenv().NDS_UI.register("ESP",function()
+    panel.Visible=false
+    miniIcon.Visible=true
+end,function()
+    panel.Visible=true
+    miniIcon.Visible=false
+end)
+
+miniIcon.MouseButton1Click:Connect(function()
+    getgenv().NDS_UI.showOnly("ESP")
 end)
