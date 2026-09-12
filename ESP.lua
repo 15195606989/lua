@@ -113,7 +113,6 @@ miniIcon.MouseButton1Click:Connect(function()
     miniIcon.Visible=false
 end)
 
--- 彩虹颜色表
 local rainbow={
     Color3.fromRGB(255,80,80),
     Color3.fromRGB(255,160,60),
@@ -128,7 +127,6 @@ local teamColorCache={}
 local function getTeamColor(p)
     if not p.Team then return Color3.fromRGB(200,200,200)end
     if teamColorCache[p.Team]then return teamColorCache[p.Team]end
-    -- 按阵营数量依次分配彩虹色
     local teams=game:GetService("Teams"):GetTeams()
     local idx=1
     for i,t in ipairs(teams)do
@@ -139,20 +137,6 @@ local function getTeamColor(p)
     return col
 end
 
-local function hasGameHealthBar(p)
-    -- 检查角色头顶有没有游戏自带的血条
-    if not p.Character then return false end
-    for _,child in pairs(p.Character:GetChildren())do
-        if child:IsA("BillboardGui")or child:IsA("ScreenGui")then
-            local n=child.Name:lower()
-            if n:find("health")or n:find("hp")or n:find("bar")then
-                return true
-            end
-        end
-    end
-    return false
-end
-
 local espOn=false
 local espObjects={}
 
@@ -160,7 +144,8 @@ local function mkESP(p)
     if p==plr or not p.Character then return end
     if espObjects[p]then return end
     local h=p.Character:FindFirstChild("Humanoid")
-    if not h then return end
+    local head=p.Character:FindFirstChild("Head")
+    if not h or not head then return end
     
     local col=getTeamColor(p)
     
@@ -173,56 +158,57 @@ local function mkESP(p)
     hl.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop
     hl.Parent=p.Character
     
-    -- 血条（游戏自带才不画）
-    local bg=nil
-    if not hasGameHealthBar(p)then
-        bg=Instance.new("BillboardGui")
-        bg.Size=UDim2.new(0,60,0,6)
-        bg.StudsOffset=Vector3.new(0,2.4,0)
-        bg.MaxDistance=300
-        bg.AlwaysOnTop=true
-        bg.Parent=p.Character
-        
-        local bgFrame=Instance.new("Frame")
-        bgFrame.Size=UDim2.new(1,0,1,0)
-        bgFrame.BackgroundColor3=Color3.fromRGB(30,30,30)
-        bgFrame.BorderSizePixel=0
-        bgFrame.Parent=bg
-        
-        local bar=Instance.new("Frame")
-        bar.Size=UDim2.new(1,0,1,0)
-        bar.BackgroundColor3=Color3.fromRGB(0,200,0)
-        bar.BorderSizePixel=0
-        bar.Parent=bgFrame
-        
-        local txt=Instance.new("TextLabel")
-        txt.Size=UDim2.new(1,0,1,0)
-        txt.BackgroundTransparency=1
-        txt.TextColor3=Color3.new(1,1,1)
-        txt.TextScaled=true
-        txt.Font=Enum.Font.GothamBold
-        txt.Parent=bgFrame
-        
-        bg.Enabled=true
-        
-        local function upd()
-            if not p.Character then return end
-            local hh=p.Character:FindFirstChild("Humanoid")
-            if not hh then return end
-            local pct=math.clamp(hh.Health/hh.MaxHealth,0,1)
-            bar.Size=UDim2.new(pct,0,1,0)
-            if pct>0.5 then
-                bar.BackgroundColor3=Color3.fromRGB(0,200,0)
-            elseif pct>0.2 then
-                bar.BackgroundColor3=Color3.fromRGB(255,200,0)
-            else
-                bar.BackgroundColor3=Color3.fromRGB(255,50,50)
-            end
-            txt.Text=math.floor(hh.Health).."/"..math.floor(hh.MaxHealth)
+    -- Roblox 默认样式血条
+    local bg=Instance.new("BillboardGui")
+    bg.Name="ESP_HealthBar"
+    bg.Size=UDim2.new(0,100,0,20)
+    bg.StudsOffset=Vector3.new(0,1.5,0)
+    bg.AlwaysOnTop=true
+    bg.LightInfluence=0
+    bg.Parent=head
+    
+    local nameLbl=Instance.new("TextLabel")
+    nameLbl.Size=UDim2.new(1,0,0.5,0)
+    nameLbl.Position=UDim2.new(0,0,0,0)
+    nameLbl.BackgroundTransparency=1
+    nameLbl.Text=p.Name
+    nameLbl.TextColor3=Color3.fromRGB(255,255,255)
+    nameLbl.TextStrokeTransparency=0.3
+    nameLbl.TextStrokeColor3=Color3.fromRGB(0,0,0)
+    nameLbl.TextSize=12
+    nameLbl.Font=Enum.Font.SourceSansBold
+    nameLbl.Parent=bg
+    
+    local barBg=Instance.new("Frame")
+    barBg.Size=UDim2.new(1,0,0.45,0)
+    barBg.Position=UDim2.new(0,0,0.5,0)
+    barBg.BackgroundColor3=Color3.fromRGB(20,20,20)
+    barBg.BackgroundTransparency=0.3
+    barBg.BorderSizePixel=0
+    barBg.Parent=bg
+    
+    local bar=Instance.new("Frame")
+    bar.Size=UDim2.new(1,0,1,0)
+    bar.BackgroundColor3=Color3.fromRGB(0,255,0)
+    bar.BorderSizePixel=0
+    bar.Parent=barBg
+    
+    local function upd()
+        if not p.Character then return end
+        local hh=p.Character:FindFirstChild("Humanoid")
+        if not hh then return end
+        local pct=math.clamp(hh.Health/hh.MaxHealth,0,1)
+        bar.Size=UDim2.new(pct,0,1,0)
+        if pct>0.5 then
+            bar.BackgroundColor3=Color3.fromRGB(0,255,0)
+        elseif pct>0.25 then
+            bar.BackgroundColor3=Color3.fromRGB(255,200,0)
+        else
+            bar.BackgroundColor3=Color3.fromRGB(255,50,50)
         end
-        upd()
-        h.HealthChanged:Connect(upd)
     end
+    upd()
+    h.HealthChanged:Connect(upd)
     
     espObjects[p]={hl=hl,bg=bg}
 end
@@ -265,7 +251,6 @@ btnClose.MouseButton1Click:Connect(function()
     gui:Destroy()
 end)
 
--- 新玩家加入（修复）
 game.Players.PlayerAdded:Connect(function(p)
     p.CharacterAdded:Connect(function()
         task.wait(0.5)
@@ -280,7 +265,6 @@ game.Players.PlayerRemoving:Connect(function(p)
     rmESP(p)
 end)
 
--- 定时检查（兜底，防止遗漏）
 RunService.Heartbeat:Connect(function()
     if not espOn then return end
     local count=0
