@@ -83,6 +83,21 @@ btnClose.Parent=panel
 
 local flyOn=false
 local flySpeed=60
+local antiGravForce=nil
+
+local function createAntiGrav()
+    if antiGravForce then antiGravForce:Destroy()end
+    antiGravForce=Instance.new("BodyForce")
+    antiGravForce.Force=Vector3.new(0,workspace.Gravity*root:GetMass(),0)
+    antiGravForce.Parent=root
+end
+
+local function removeAntiGrav()
+    if antiGravForce then
+        antiGravForce:Destroy()
+        antiGravForce=nil
+    end
+end
 
 btnFly.MouseButton1Click:Connect(function()
     flyOn=not flyOn
@@ -94,6 +109,7 @@ btnFly.MouseButton1Click:Connect(function()
         for _,p in pairs(char:GetDescendants())do
             if p:IsA("BasePart")then p.CanCollide=false end
         end
+        createAntiGrav()
     else
         btnFly.Text="🔴 飞行: 关"
         btnFly.BackgroundColor3=Color3.new(0.6,0.1,0.1)
@@ -102,6 +118,7 @@ btnFly.MouseButton1Click:Connect(function()
         for _,p in pairs(char:GetDescendants())do
             if p:IsA("BasePart")then p.CanCollide=true end
         end
+        removeAntiGrav()
     end
 end)
 
@@ -122,6 +139,7 @@ btnClose.MouseButton1Click:Connect(function()
         for _,p in pairs(char:GetDescendants())do
             if p:IsA("BasePart")then p.CanCollide=true end
         end
+        removeAntiGrav()
     end
     gui:Destroy()
 end)
@@ -150,9 +168,12 @@ game:GetService("RunService").Heartbeat:Connect(function(dt)
     local up=Vector3.new(0,1,0)
     
     local mv=(right*move:Dot(right)+fwd*move:Dot(fwd))*flySpeed*dt
-    mv=mv+up*flySpeed*0.5*dt
     
-    root.CFrame=root.CFrame+mv
+    if move.Magnitude<0.1 then
+        root.CFrame=root.CFrame
+    else
+        root.CFrame=root.CFrame+mv
+    end
 end)
 
 plr.CharacterAdded:Connect(function(c)
@@ -160,6 +181,7 @@ plr.CharacterAdded:Connect(function(c)
     root=char:WaitForChild("HumanoidRootPart")
     hum=char:WaitForChild("Humanoid")
     flyOn=false
+    antiGravForce=nil
     btnFly.Text="🔴 飞行: 关"
     btnFly.BackgroundColor3=Color3.new(0.6,0.1,0.1)
 end)
