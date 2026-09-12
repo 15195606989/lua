@@ -81,10 +81,10 @@ btnClose.TextSize=14
 btnClose.Font=Enum.Font.GothamBold
 btnClose.Parent=panel
 
--- 上升/下降键
+-- 上升下降键
 local btnUp=Instance.new("TextButton")
 btnUp.Size=UDim2.new(0,55,0,55)
-btnUp.Position=UDim2.new(1,-65,0.65,0)
+btnUp.Position=UDim2.new(1,-65,0.5,0)
 btnUp.BackgroundColor3=Color3.new(0.1,0.5,0.2)
 btnUp.BackgroundTransparency=0.3
 btnUp.BorderSizePixel=0
@@ -94,10 +94,11 @@ btnUp.TextSize=22
 btnUp.Font=Enum.Font.GothamBold
 btnUp.Parent=gui
 btnUp.Visible=false
+btnUp.ZIndex=50
 
 local btnDown=Instance.new("TextButton")
 btnDown.Size=UDim2.new(0,55,0,55)
-btnDown.Position=UDim2.new(1,-65,0.65,60)
+btnDown.Position=UDim2.new(1,-65,0.5,60)
 btnDown.BackgroundColor3=Color3.new(0.5,0.1,0.1)
 btnDown.BackgroundTransparency=0.3
 btnDown.BorderSizePixel=0
@@ -107,6 +108,7 @@ btnDown.TextSize=22
 btnDown.Font=Enum.Font.GothamBold
 btnDown.Parent=gui
 btnDown.Visible=false
+btnDown.ZIndex=50
 
 local flyOn=false
 local flySpeed=60
@@ -114,30 +116,31 @@ local upHeld=false
 local downHeld=false
 local antiGravForce=nil
 
--- 隐藏跳跃键
-local function hideJump()
-    local jump=plr.PlayerGui:FindFirstChild("JumpButton")or plr.PlayerGui:FindFirstChild("Jump")
-    if not jump then
-        for _,child in pairs(plr.PlayerGui:GetChildren())do
-            if child.Name:lower():find("jump")then
-                jump=child
-                break
-            end
+local function findJump()
+    local ok,jump=pcall(function()
+        return plr.PlayerGui:FindFirstChild("JumpButton")or plr.PlayerGui:FindFirstChild("Jump")
+    end)
+    if ok and jump then return jump end
+    for _,child in pairs(plr.PlayerGui:GetChildren())do
+        if child.Name:lower():find("jump")then
+            return child
         end
     end
+    for _,child in pairs(plr.PlayerGui:GetDescendants())do
+        if child.Name:lower():find("jump")then
+            return child
+        end
+    end
+    return nil
+end
+
+local function hideJump()
+    local jump=findJump()
     if jump then jump.Visible=false end
 end
 
 local function showJump()
-    local jump=plr.PlayerGui:FindFirstChild("JumpButton")or plr.PlayerGui:FindFirstChild("Jump")
-    if not jump then
-        for _,child in pairs(plr.PlayerGui:GetChildren())do
-            if child.Name:lower():find("jump")then
-                jump=child
-                break
-            end
-        end
-    end
+    local jump=findJump()
     if jump then jump.Visible=true end
 end
 
