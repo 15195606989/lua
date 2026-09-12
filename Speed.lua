@@ -1,6 +1,7 @@
 local plr=game.Players.LocalPlayer
 local char=plr.Character or plr.CharacterAdded:Wait()
 local hum=char:WaitForChild("Humanoid")
+local UIS=game:GetService("UserInputService")
 
 if plr.PlayerGui:FindFirstChild("SPD_UI")then plr.PlayerGui.SPD_UI:Destroy()end
 
@@ -9,22 +10,78 @@ gui.Name="SPD_UI"
 gui.Parent=plr.PlayerGui
 gui.ResetOnSpawn=false
 
+local miniIcon=Instance.new("TextButton")
+miniIcon.Size=UDim2.new(0,28,0,28)
+miniIcon.Position=UDim2.new(1,-35,0,40)
+miniIcon.BackgroundColor3=Color3.new(0.8,0.6,0.1)
+miniIcon.BackgroundTransparency=0.2
+miniIcon.BorderSizePixel=0
+miniIcon.Text="🏃"
+miniIcon.TextSize=16
+miniIcon.TextColor3=Color3.new(1,1,1)
+miniIcon.Font=Enum.Font.GothamBold
+miniIcon.Parent=gui
+miniIcon.Visible=false
+
 local panel=Instance.new("Frame")
 panel.Size=UDim2.new(0,140,0,110)
-panel.Position=UDim2.new(1,-150,0.5,-55)
+panel.Position=UDim2.new(1,-150,0.5,70)
 panel.BackgroundColor3=Color3.new(0.08,0.1,0.16)
 panel.BackgroundTransparency=0.1
 panel.BorderSizePixel=1
 panel.Parent=gui
 
-local title=Instance.new("TextLabel")
+local title=Instance.new("TextButton")
 title.Size=UDim2.new(1,0,0,25)
 title.Text="🏃 疾跑"
-title.TextColor3=Color3.new(0.6,0.85,1)
+title.TextColor3=Color3.new(0.85,0.75,0.3)
 title.TextSize=12
 title.Font=Enum.Font.GothamBold
 title.BackgroundTransparency=1
 title.Parent=panel
+
+local dragging=false
+local dragStart=nil
+local startPos=nil
+
+title.MouseButton1Down:Connect(function()
+    dragging=true
+    dragStart=Vector2.new(title.AbsolutePosition.X,title.AbsolutePosition.Y)
+    startPos=panel.Position
+end)
+
+UIS.InputChanged:Connect(function(input)
+    if dragging and (input.UserInputType==Enum.UserInputType.MouseMovement or input.UserInputType==Enum.UserInputType.Touch)then
+        local delta=Vector2.new(input.Position.X,input.Position.Y)-dragStart
+        panel.Position=UDim2.new(startPos.X.Scale,startPos.X.Offset+delta.X,startPos.Y.Scale,startPos.Y.Offset+delta.Y)
+    end
+end)
+
+UIS.InputEnded:Connect(function(input)
+    if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then
+        dragging=false
+    end
+end)
+
+local btnMinimize=Instance.new("TextButton")
+btnMinimize.Size=UDim2.new(0,25,0,25)
+btnMinimize.Position=UDim2.new(1,-55,0,0)
+btnMinimize.BackgroundTransparency=1
+btnMinimize.Text="−"
+btnMinimize.TextColor3=Color3.new(1,0.8,0.3)
+btnMinimize.TextSize=16
+btnMinimize.Font=Enum.Font.GothamBold
+btnMinimize.Parent=panel
+
+local btnClose=Instance.new("TextButton")
+btnClose.Size=UDim2.new(0,25,0,25)
+btnClose.Position=UDim2.new(1,-28,0,0)
+btnClose.BackgroundTransparency=1
+btnClose.Text="✕"
+btnClose.TextColor3=Color3.new(1,0.3,0.3)
+btnClose.TextSize=14
+btnClose.Font=Enum.Font.GothamBold
+btnClose.Parent=panel
 
 local btnSpeed=Instance.new("TextButton")
 btnSpeed.Size=UDim2.new(0.9,0,0,30)
@@ -67,15 +124,15 @@ btnPlus.BackgroundColor3=Color3.new(0.1,0.6,0.1)
 btnPlus.BorderSizePixel=0
 btnPlus.Parent=panel
 
-local btnClose=Instance.new("TextButton")
-btnClose.Size=UDim2.new(0,25,0,25)
-btnClose.Position=UDim2.new(1,-28,0,0)
-btnClose.BackgroundTransparency=1
-btnClose.Text="✕"
-btnClose.TextColor3=Color3.new(1,0.3,0.3)
-btnClose.TextSize=14
-btnClose.Font=Enum.Font.GothamBold
-btnClose.Parent=panel
+btnMinimize.MouseButton1Click:Connect(function()
+    panel.Visible=false
+    miniIcon.Visible=true
+end)
+
+miniIcon.MouseButton1Click:Connect(function()
+    panel.Visible=true
+    miniIcon.Visible=false
+end)
 
 local speedOn=false
 local speedVal=50
