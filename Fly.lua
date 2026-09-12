@@ -288,13 +288,13 @@ game:GetService("RunService").Heartbeat:Connect(function(dt)
     
     local camPos=cam.CFrame.Position
     local rootPos=root.Position
-    local dist=(camPos-rootPos).Magnitude
+    local camToRoot=camPos-rootPos
     
     local fullDir
-    if dist<1.5 then
-        fullDir=cam.CFrame.LookVector
+    if camToRoot.Magnitude>2.5 then
+        fullDir=camToRoot.Unit
     else
-        fullDir=(camPos-rootPos).Unit
+        fullDir=cam.CFrame.LookVector
     end
     
     local hDir=Vector3.new(fullDir.X,0,fullDir.Z).Unit
