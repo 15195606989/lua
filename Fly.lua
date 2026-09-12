@@ -237,7 +237,8 @@ game:GetService("RunService").Heartbeat:Connect(function(dt)
     local ld=(cam.CFrame.Position-root.Position).Unit
     ld=Vector3.new(ld.X,0,ld.Z).Unit
     if ld.Magnitude>0.01 then
-        root.CFrame=CFrame.new(root.Position,root.Position-ld)
+        local lookCF=CFrame.new(root.Position,root.Position-ld)
+        root.CFrame=lookCF*CFrame.Angles(math.rad(-90),0,0)
     end
     local mv=hum.MoveDirection
     local fw=root.CFrame.LookVector
