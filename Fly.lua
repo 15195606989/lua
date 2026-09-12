@@ -27,7 +27,7 @@ miniIcon.Visible=false
 
 local panel=Instance.new("Frame")
 panel.Size=UDim2.new(0,140,0,130)
-panel.Position=UDim2.new(1,-150,0.5,-65)
+panel.Position=UDim2.new(1,-150,0,10)
 panel.BackgroundColor3=Color3.new(0.08,0.1,0.16)
 panel.BackgroundTransparency=0.1
 panel.BorderSizePixel=1
@@ -291,14 +291,21 @@ game:GetService("RunService").Heartbeat:Connect(function(dt)
     hum.PlatformStand=true
     root.Velocity=Vector3.new(0,0,0)
     root.AssemblyLinearVelocity=Vector3.new(0,0,0)
-    local ld=(cam.CFrame.Position-root.Position).Unit
-    ld=Vector3.new(ld.X,0,ld.Z).Unit
-    if ld.Magnitude>0.01 then
-        root.CFrame=CFrame.new(root.Position,root.Position-ld)
+    
+    -- 完整方向（含上下）
+    local fullDir=(cam.CFrame.Position-root.Position).Unit
+    -- 水平方向（用于移动）
+    local hDir=Vector3.new(fullDir.X,0,fullDir.Z).Unit
+    
+    -- 朝向：含上下倾斜
+    if fullDir.Magnitude>0.01 then
+        root.CFrame=CFrame.new(root.Position,root.Position-fullDir)
     end
+    
+    -- 移动：用水平方向
     local mv=hum.MoveDirection
-    local fw=root.CFrame.LookVector
-    local rt=root.CFrame.RightVector
+    local fw=hDir
+    local rt=Vector3.new(-hDir.Z,0,hDir.X)
     local up=Vector3.new(0,1,0)
     local v=(rt*mv:Dot(rt)+fw*mv:Dot(fw))*flySpeed*dt
     if upH then
