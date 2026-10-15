@@ -1,15 +1,12 @@
 local base="https://raw.githubusercontent.com/15195606989/lua/refs/heads/main/"
-local scripts={"Fly.lua","Speed.lua","ESP.lua","Vortex.lua","Aimbot.lua"}
-
+local scripts={"Fly.lua","Speed.lua","ESP.lua","Vortex.lua","Aimbot.lua","Selector.lua"}
 game:GetService("StarterGui"):SetCore("SendNotification",{
     Title="NDS 加载中",
     Text="正在加载 "..#scripts.." 个功能...",
     Duration=3
 })
-
 local okList={}
 local failList={}
-
 for _,name in ipairs(scripts)do
     local ok,err=pcall(function()
         local code=game:HttpGet(base..name)
@@ -25,7 +22,6 @@ for _,name in ipairs(scripts)do
         table.insert(failList,name.." - "..tostring(err):sub(1,60))
     end
 end
-
 -- 显示成功
 if #okList>0 then
     game:GetService("StarterGui"):SetCore("SendNotification",{
@@ -34,7 +30,6 @@ if #okList>0 then
         Duration=8
     })
 end
-
 -- 显示失败
 if #failList>0 then
     for _,info in ipairs(failList)do
