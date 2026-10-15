@@ -1,4 +1,4 @@
-local base="https://gitee.com/wuzhaole15195606989/roblox/raw/master/"
+local base="https://raw.githubusercontent.com/15195606989/lua"
 local scripts={"Fly.lua","Speed.lua","ESP.lua","Vortex.lua","Aimbot.lua"}
 
 game:GetService("StarterGui"):SetCore("SendNotification",{
