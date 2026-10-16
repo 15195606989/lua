@@ -1,46 +1,56 @@
 --[[
-Vortex.lua - 本地漩涡
-作用：在本地客户端把周围未固定物体卷向自己，仅在本地生效，不影响服务器物理。
-说明：所有物理修改仅对本地生效，其他玩家看不到，服务端也可能会拒绝部分物体的速度修改。
+Vortex.lua - 本地漩涡（带功能面板）
+作用：把周围未固定物体卷向自己，仅本地生效。
+性能优化：缓存候选部件列表，每 0.5 秒刷新一次，Heartbeat 只遍历缓存，避免每帧全图遍历。
 
 【变量表】
-plr            LocalPlayer，本地玩家
-char           玩家角色模型
-root           角色 HumanoidRootPart（漩涡中心）
-RS              RunService 服务
-gui             ScreenGui 容器
-btn             开关按钮
-vortexOn        布尔，漩涡是否开启
-conn            Heartbeat 连接句柄，关闭时断开
-affectedParts   表，记录被吸过的部件，关闭时用于清零速度
-isInChar()      函数，判断部件是否属于自己角色
-startVortex()   函数，开启漩涡主循环
-stopVortex()    函数，关闭漩涡并清零速度
+plr              LocalPlayer
+char             角色模型
+root             HumanoidRootPart（漩涡中心）
+RS               RunService
+UIS              UserInputService
+gui              ScreenGui
+btn              开关按钮
+panel            功能面板
+vortexOn         漩涡是否开启
+conn             Heartbeat 连接
+affectedParts    记录被吸过的部件，关闭时清零速度
+cachedParts      缓存的可吸引部件列表
+lastCache        上次刷新缓存的时间
+radius           吸引半径（可调）
+strength         吸引强度（可调）
+showHighlight    是否高亮被吸物体
+highlights       记录部件对应的 Highlight 实例
 
 【代码结构】
-1. 初始化：拿玩家、角色、root、服务
-2. 清理旧 UI：防止重复加载叠加
-3. 创建 GUI 与开关按钮
-4. 状态变量：vortexOn / conn / affectedParts
-5. isInChar()：遍历角色所有子孙，判断部件是否在角色身上
-6. startVortex()：每帧遍历 workspace，对距离 2~100 的非固定部件施加切向+向心速度，模拟漩涡
-7. stopVortex()：断开连接，遍历 affectedParts 把速度归零，并清自己 root 速度
-8. 按钮点击：切换开关，调 start/stop
-9. 角色重生：停止漩涡并重置状态
+1. 初始化玩家/角色/服务
+2. 清理旧 UI
+3. 创建开关按钮
+4. 创建右侧功能面板（范围±、强度±、高亮开关）
+5. isInChar() 判断部件是否在自己角色上
+6. refreshCache() 定时刷新候选部件列表
+7. startVortex() 开启漩涡（Heartbeat 只遍历缓存）
+8. stopVortex() 关闭并清零速度 + 清高亮
+9. 按钮事件绑定
+10. 角色重生重置
 
 【依赖】
-无。独立文件。
+无。
 ]]
 
 local plr=game.Players.LocalPlayer
 local char=plr.Character or plr.CharacterAdded:Wait()
 local root=char:WaitForChild("HumanoidRootPart")
 local RS=game:GetService("RunService")
+local UIS=game:GetService("UserInputService")
 if plr.PlayerGui:FindFirstChild("VORTEX_UI")then plr.PlayerGui.VORTEX_UI:Destroy()end
+
 local gui=Instance.new("ScreenGui")
 gui.Name="VORTEX_UI"
 gui.Parent=plr.PlayerGui
 gui.ResetOnSpawn=false
+
+-- 开关按钮
 local btn=Instance.new("TextButton")
 btn.Size=UDim2.new(0,100,0,40)
 btn.Position=UDim2.new(0,10,0.5,-20)
@@ -52,34 +62,206 @@ btn.TextColor3=Color3.new(1,1,1)
 btn.TextSize=12
 btn.Font=Enum.Font.GothamBold
 btn.Parent=gui
+
+-- 功能面板
+local panel=Instance.new("Frame")
+panel.Size=UDim2.new(0,130,0,160)
+panel.Position=UDim2.new(1,-140,0,115)
+panel.BackgroundColor3=Color3.new(0.08,0.1,0.16)
+panel.BackgroundTransparency=0.1
+panel.BorderSizePixel=1
+panel.Parent=gui
+panel.Visible=false
+
+local title=Instance.new("TextButton")
+title.Size=UDim2.new(1,0,0,25)
+title.Text="🌀 漩涡设置"
+title.TextColor3=Color3.new(0.8,0.6,1)
+title.TextSize=11
+title.Font=Enum.Font.GothamBold
+title.BackgroundTransparency=1
+title.Parent=panel
+
+local dragging=false
+local dragStart=nil
+local startPos=nil
+
+title.MouseButton1Down:Connect(function()
+    dragging=true
+    dragStart=Vector2.new(title.AbsolutePosition.X,title.AbsolutePosition.Y)
+    startPos=panel.Position
+end)
+
+UIS.InputChanged:Connect(function(input)
+    if dragging and (input.UserInputType==Enum.UserInputType.MouseMovement or input.UserInputType==Enum.UserInputType.Touch)then
+        local delta=Vector2.new(input.Position.X,input.Position.Y)-dragStart
+        panel.Position=UDim2.new(startPos.X.Scale,startPos.X.Offset+delta.X,startPos.Y.Scale,startPos.Y.Offset+delta.Y)
+    end
+end)
+
+UIS.InputEnded:Connect(function(input)
+    if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then
+        dragging=false
+    end
+end)
+
+local radiusLabel=Instance.new("TextLabel")
+radiusLabel.Size=UDim2.new(1,0,0,18)
+radiusLabel.Position=UDim2.new(0,0,0,26)
+radiusLabel.Text="范围: 50"
+radiusLabel.TextColor3=Color3.new(0.8,0.9,1)
+radiusLabel.TextSize=10
+radiusLabel.BackgroundTransparency=1
+radiusLabel.Parent=panel
+
+local btnRMinus=Instance.new("TextButton")
+btnRMinus.Size=UDim2.new(0,25,0,20)
+btnRMinus.Position=UDim2.new(0.5,-35,0,46)
+btnRMinus.Text="−"
+btnRMinus.TextColor3=Color3.new(1,1,1)
+btnRMinus.TextSize=14
+btnRMinus.BackgroundColor3=Color3.new(0.6,0.1,0.1)
+btnRMinus.BorderSizePixel=0
+btnRMinus.Parent=panel
+
+local btnRPlus=Instance.new("TextButton")
+btnRPlus.Size=UDim2.new(0,25,0,20)
+btnRPlus.Position=UDim2.new(0.5,10,0,46)
+btnRPlus.Text="+"
+btnRPlus.TextColor3=Color3.new(1,1,1)
+btnRPlus.TextSize=14
+btnRPlus.BackgroundColor3=Color3.new(0.1,0.6,0.1)
+btnRPlus.BorderSizePixel=0
+btnRPlus.Parent=panel
+
+local strengthLabel=Instance.new("TextLabel")
+strengthLabel.Size=UDim2.new(1,0,0,18)
+strengthLabel.Position=UDim2.new(0,0,0,68)
+strengthLabel.Text="强度: 80"
+strengthLabel.TextColor3=Color3.new(0.8,0.9,1)
+strengthLabel.TextSize=10
+strengthLabel.BackgroundTransparency=1
+strengthLabel.Parent=panel
+
+local btnSMinus=Instance.new("TextButton")
+btnSMinus.Size=UDim2.new(0,25,0,20)
+btnSMinus.Position=UDim2.new(0.5,-35,0,88)
+btnSMinus.Text="−"
+btnSMinus.TextColor3=Color3.new(1,1,1)
+btnSMinus.TextSize=14
+btnSMinus.BackgroundColor3=Color3.new(0.6,0.1,0.1)
+btnSMinus.BorderSizePixel=0
+btnSMinus.Parent=panel
+
+local btnSPlus=Instance.new("TextButton")
+btnSPlus.Size=UDim2.new(0,25,0,20)
+btnSPlus.Position=UDim2.new(0.5,10,0,88)
+btnSPlus.Text="+"
+btnSPlus.TextColor3=Color3.new(1,1,1)
+btnSPlus.TextSize=14
+btnSPlus.BackgroundColor3=Color3.new(0.1,0.6,0.1)
+btnSPlus.BorderSizePixel=0
+btnSPlus.Parent=panel
+
+local btnHL=Instance.new("TextButton")
+btnHL.Size=UDim2.new(0.9,0,0,24)
+btnHL.Position=UDim2.new(0.05,0,0,112)
+btnHL.BackgroundColor3=Color3.new(0.3,0.3,0.6)
+btnHL.BackgroundTransparency=0.3
+btnHL.BorderSizePixel=0
+btnHL.Text="高亮: 关"
+btnHL.TextColor3=Color3.new(1,1,1)
+btnHL.TextSize=10
+btnHL.Font=Enum.Font.GothamSemibold
+btnHL.Parent=panel
+
+local infoLabel=Instance.new("TextLabel")
+infoLabel.Size=UDim2.new(1,0,0,16)
+infoLabel.Position=UDim2.new(0,0,0,140)
+infoLabel.Text="吸引: 0"
+infoLabel.TextColor3=Color3.new(0.7,0.7,0.7)
+infoLabel.TextSize=9
+infoLabel.BackgroundTransparency=1
+infoLabel.Parent=panel
+
 local vortexOn=false
 local conn=nil
 local affectedParts={}
--- 判断某部件是否属于自己角色，避免吸自己
+local cachedParts={}
+local lastCache=0
+local radius=50
+local strength=80
+local showHighlight=false
+local highlights={}
+
 local function isInChar(part)
     for _,c in pairs(char:GetDescendants())do if c==part then return true end end
     return false
 end
--- 开启漩涡：每帧施加切向+向心速度
+
+-- 刷新候选部件列表（每0.5秒调用一次，避免每帧全图遍历）
+local function refreshCache()
+    cachedParts={}
+    for _,p in pairs(workspace:GetDescendants())do
+        if p:IsA("BasePart") and not p.Anchored and p~=root and not isInChar(p) then
+            table.insert(cachedParts,p)
+        end
+    end
+end
+
+-- 清除所有高亮
+local function clearHighlights()
+    for part,hl in pairs(highlights)do
+        if hl then hl:Destroy() end
+    end
+    highlights={}
+end
+
+-- 给部件加/更新高亮
+local function setHighlight(part)
+    if highlights[part] then return end
+    local hl=Instance.new("Highlight")
+    hl.Adornee=part
+    hl.FillColor=Color3.new(0.6,0.3,1)
+    hl.OutlineColor=Color3.new(0.8,0.5,1)
+    hl.FillTransparency=0.85
+    hl.OutlineTransparency=0.5
+    hl.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop
+    hl.Parent=part
+    highlights[part]=hl
+end
+
 local function startVortex()
     conn=RS.Heartbeat:Connect(function()
         if not root or not root.Parent then return end
+        local now=tick()
+        if now-lastCache>0.5 then
+            refreshCache()
+            lastCache=now
+        end
         local center=root.Position
-        for _,p in pairs(workspace:GetDescendants())do
-            if p:IsA("BasePart") and not p.Anchored and p~=root and not isInChar(p) then
+        local count=0
+        for _,p in pairs(cachedParts)do
+            if p and p.Parent then
                 local dir=p.Position-center
-                local horiz=Vector3.new(dir.X,0,dir.Z)
-                if horiz.Magnitude>2 and horiz.Magnitude<100 then
-                    local tangent=Vector3.new(-horiz.Z,0,horiz.X).Unit
-                    local toward=(center-p.Position).Unit
-                    p.AssemblyLinearVelocity=tangent*80+toward*20+Vector3.new(0,10,0)
-                    affectedParts[p]=true
+                local dist=dir.Magnitude
+                if dist>2 and dist<radius then
+                    local horiz=Vector3.new(dir.X,0,dir.Z)
+                    if horiz.Magnitude>0.1 then
+                        local tangent=Vector3.new(-horiz.Z,0,horiz.X).Unit
+                        local toward=(center-p.Position).Unit
+                        p.AssemblyLinearVelocity=tangent*strength+toward*(strength*0.25)+Vector3.new(0,strength*0.12,0)
+                        affectedParts[p]=true
+                        if showHighlight then setHighlight(p) end
+                        count=count+1
+                    end
                 end
             end
         end
+        infoLabel.Text="吸引: "..count
     end)
 end
--- 关闭漩涡：清零被吸物体速度 + 清自己残留速度
+
 local function stopVortex()
     if conn then conn:Disconnect() conn=nil end
     for p,_ in pairs(affectedParts)do
@@ -89,16 +271,69 @@ local function stopVortex()
         end) end
     end
     affectedParts={}
+    clearHighlights()
     if root and root.Parent then pcall(function()
         root.AssemblyLinearVelocity=Vector3.new(0,0,0)
         root.AssemblyAngularVelocity=Vector3.new(0,0,0)
     end) end
+    infoLabel.Text="吸引: 0"
 end
+
+-- 长按支持
+local function setupHold(b,cb)
+    local holding=false
+    b.MouseButton1Down:Connect(function()
+        holding=true
+        cb()
+        task.spawn(function()
+            task.wait(0.4)
+            while holding do task.wait(0.05) if holding then cb() end end
+        end)
+    end)
+    b.MouseButton1Up:Connect(function() holding=false end)
+    b.MouseLeave:Connect(function() holding=false end)
+end
+
+setupHold(btnRMinus,function()
+    radius=math.max(10,radius-5)
+    radiusLabel.Text="范围: "..radius
+end)
+
+setupHold(btnRPlus,function()
+    radius=math.min(300,radius+5)
+    radiusLabel.Text="范围: "..radius
+end)
+
+setupHold(btnSMinus,function()
+    strength=math.max(10,strength-10)
+    strengthLabel.Text="强度: "..strength
+end)
+
+setupHold(btnSPlus,function()
+    strength=math.min(500,strength+10)
+    strengthLabel.Text="强度: "..strength
+end)
+
+btnHL.MouseButton1Click:Connect(function()
+    showHighlight=not showHighlight
+    if showHighlight then
+        btnHL.Text="高亮: 开"
+        btnHL.BackgroundColor3=Color3.new(0.1,0.6,0.3)
+    else
+        btnHL.Text="高亮: 关"
+        btnHL.BackgroundColor3=Color3.new(0.3,0.3,0.6)
+        clearHighlights()
+    end
+end)
+
 btn.MouseButton1Click:Connect(function()
     vortexOn=not vortexOn
     if vortexOn then
         btn.Text="🌀 漩涡: 开"
         btn.BackgroundColor3=Color3.new(0,0.5,0.1)
+        panel.Visible=true
+        refreshCache()
+        lastCache=tick()
         startVortex()
     else
         btn.Text="🌀 漩涡: 关"
@@ -106,6 +341,7 @@ btn.MouseButton1Click:Connect(function()
         stopVortex()
     end
 end)
+
 plr.CharacterAdded:Connect(function(c)
     stopVortex()
     char=c
@@ -114,4 +350,5 @@ plr.CharacterAdded:Connect(function(c)
     btn.Text="🌀 漩涡: 关"
     btn.BackgroundColor3=Color3.new(0.4,0.1,0.6)
 end)
--- Vortex.lua 结束 | 共 96 行
+
+-- Vortex.lua 结束 | 共 253 行
