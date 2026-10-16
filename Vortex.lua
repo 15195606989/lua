@@ -24,7 +24,14 @@ btn.Parent=gui
 
 local vortexOn=false
 local conn=nil
-local storedVels={}
+local affectedParts={}
+
+local function isInChar(part)
+    for _,cp in pairs(char:GetDescendants())do
+        if cp==part then return true end
+    end
+    return false
+end
 
 local function startVortex()
     conn=RunService.Heartbeat:Connect(function()
@@ -32,12 +39,8 @@ local function startVortex()
         local center=root.Position
         
         for _,part in pairs(workspace:GetDescendants())do
-            if part:IsA("BasePart")and not part.Anchored and part~=root then
-                local inChar=false
-                for _,cp in pairs(char:GetDescendants())do
-                    if cp==part then inChar=true break end
-                end
-                if not inChar then
+            if part:IsA("BasePart") and not part.Anchored and part~=root then
+                if not isInChar(part) then
                     local dir=part.Position-center
                     local horiz=Vector3.new(dir.X,0,dir.Z)
                     if horiz.Magnitude>2 and horiz.Magnitude<100 then
@@ -45,6 +48,7 @@ local function startVortex()
                         local toward=(center-part.Position).Unit
                         local v=tangent*80+toward*20+Vector3.new(0,10,0)
                         part.AssemblyLinearVelocity=v
+                        affectedParts[part]=true
                     end
                 end
             end
@@ -53,7 +57,24 @@ local function startVortex()
 end
 
 local function stopVortex()
-    if conn then conn:Disconnect()conn=nil end
+    if conn then conn:Disconnect() conn=nil end
+    -- 清除所有被吸过的物体的速度，让它们原地停下
+    for part,_ in pairs(affectedParts)do
+        if part and part.Parent then
+            pcall(function()
+                part.AssemblyLinearVelocity=Vector3.new(0,0,0)
+                part.AssemblyAngularVelocity=Vector3.new(0,0,0)
+            end)
+        end
+    end
+    affectedParts={}
+    -- 清除自己身上的残留速度
+    if root and root.Parent then
+        pcall(function()
+            root.AssemblyLinearVelocity=Vector3.new(0,0,0)
+            root.AssemblyAngularVelocity=Vector3.new(0,0,0)
+        end)
+    end
 end
 
 btn.MouseButton1Click:Connect(function()
@@ -70,6 +91,10 @@ btn.MouseButton1Click:Connect(function()
 end)
 
 plr.CharacterAdded:Connect(function(c)
+    stopVortex()
     char=c
     root=c:WaitForChild("HumanoidRootPart")
+    vortexOn=false
+    btn.Text="🌀 漩涡: 关"
+    btn.BackgroundColor3=Color3.new(0.4,0.1,0.6)
 end)
