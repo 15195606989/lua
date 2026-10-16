@@ -18,6 +18,40 @@ gui.Name="SEL_UI"
 gui.Parent=plr.PlayerGui
 gui.ResetOnSpawn=false
 
+-- ===== 准星 =====
+local crosshair=Instance.new("Frame")
+crosshair.Size=UDim2.new(0,40,0,40)
+crosshair.Position=UDim2.new(0.5,-20,0.5,-20)
+crosshair.BackgroundTransparency=1
+crosshair.BorderSizePixel=0
+crosshair.ZIndex=100
+crosshair.Parent=gui
+crosshair.Visible=false
+
+local chCircle=Instance.new("Frame")
+chCircle.Size=UDim2.new(1,0,1,0)
+chCircle.Position=UDim2.new(0,0,0,0)
+chCircle.BackgroundTransparency=1
+chCircle.BorderSizePixel=2
+chCircle.BorderColor3=Color3.new(0,1,0)
+chCircle.Parent=crosshair
+
+local chCorner=Instance.new("UICorner")
+chCorner.CornerRadius=UDim.new(1,0)
+chCorner.Parent=chCircle
+
+local chDot=Instance.new("Frame")
+chDot.Size=UDim2.new(0,4,0,4)
+chDot.Position=UDim2.new(0.5,-2,0.5,-2)
+chDot.BackgroundColor3=Color3.new(0,1,0)
+chDot.BorderSizePixel=0
+chDot.Parent=crosshair
+
+local chDotCorner=Instance.new("UICorner")
+chDotCorner.CornerRadius=UDim.new(1,0)
+chDotCorner.Parent=chDot
+
+-- ===== 小图标 =====
 local miniIcon=Instance.new("TextButton")
 miniIcon.Size=UDim2.new(0,28,0,28)
 miniIcon.Position=UDim2.new(1,-35,0,185)
@@ -31,8 +65,9 @@ miniIcon.Font=Enum.Font.GothamBold
 miniIcon.Parent=gui
 miniIcon.Visible=false
 
+-- ===== 主面板 =====
 local panel=Instance.new("Frame")
-panel.Size=UDim2.new(0,140,0,110)
+panel.Size=UDim2.new(0,140,0,140)
 panel.Position=UDim2.new(1,-150,0,185)
 panel.BackgroundColor3=Color3.new(0.08,0.1,0.16)
 panel.BackgroundTransparency=0.1
@@ -103,21 +138,34 @@ btnMode.TextSize=11
 btnMode.Font=Enum.Font.GothamSemibold
 btnMode.Parent=panel
 
-local btnPick=Instance.new("TextButton")
-btnPick.Size=UDim2.new(0.9,0,0,28)
-btnPick.Position=UDim2.new(0.05,0,0,60)
-btnPick.BackgroundColor3=Color3.new(0.1,0.6,0.2)
-btnPick.BackgroundTransparency=0.3
-btnPick.BorderSizePixel=0
-btnPick.Text="开始选择"
-btnPick.TextColor3=Color3.new(1,1,1)
-btnPick.TextSize=11
-btnPick.Font=Enum.Font.GothamSemibold
-btnPick.Parent=panel
+local btnStart=Instance.new("TextButton")
+btnStart.Size=UDim2.new(0.9,0,0,28)
+btnStart.Position=UDim2.new(0.05,0,0,60)
+btnStart.BackgroundColor3=Color3.new(0.1,0.6,0.2)
+btnStart.BackgroundTransparency=0.3
+btnStart.BorderSizePixel=0
+btnStart.Text="开始扫描"
+btnStart.TextColor3=Color3.new(1,1,1)
+btnStart.TextSize=11
+btnStart.Font=Enum.Font.GothamSemibold
+btnStart.Parent=panel
+
+local btnConfirm=Instance.new("TextButton")
+btnConfirm.Size=UDim2.new(0.9,0,0,28)
+btnConfirm.Position=UDim2.new(0.05,0,0,92)
+btnConfirm.BackgroundColor3=Color3.new(0.1,0.4,0.7)
+btnConfirm.BackgroundTransparency=0.3
+btnConfirm.BorderSizePixel=0
+btnConfirm.Text="✅ 确认选择"
+btnConfirm.TextColor3=Color3.new(1,1,1)
+btnConfirm.TextSize=11
+btnConfirm.Font=Enum.Font.GothamSemibold
+btnConfirm.Parent=panel
+btnConfirm.Active=false
 
 local infoLabel=Instance.new("TextLabel")
 infoLabel.Size=UDim2.new(1,0,0,18)
-infoLabel.Position=UDim2.new(0,0,0,92)
+infoLabel.Position=UDim2.new(0,0,0,122)
 infoLabel.Text="当前: 无"
 infoLabel.TextColor3=Color3.new(0.8,0.9,1)
 infoLabel.TextSize=10
@@ -135,20 +183,19 @@ miniIcon.MouseButton1Click:Connect(function()
 end)
 
 local selectMode="player"
-local picking=false
-local pickConn=nil
+local scanning=false
+local scanConn=nil
 local pickHL=nil
 local hoverTgt=nil
 
 local function clearHL()
     if pickHL then pickHL:Destroy()pickHL=nil end
-    hoverTgt=nil
 end
 
+-- 准星固定在屏幕中心，射线检测屏幕中心点
 local function getPlayerAtCenter()
     local vs=cam.ViewportSize
     local ray=cam:ViewportPointToRay(vs.X/2,vs.Y/2)
-    -- 穿墙：用白名单只检测玩家角色
     local chars={}
     for _,p in pairs(game.Players:GetPlayers())do
         if p~=plr and p.Character then
@@ -184,13 +231,15 @@ local function getObjectAtCenter()
     return nil
 end
 
-local function startPicking()
-    if picking then return end
-    picking=true
-    btnPick.Text="点击屏幕选择"
-    btnPick.BackgroundColor3=Color3.new(0.8,0.5,0.1)
-    
-    pickConn=RunService.Heartbeat:Connect(function()
+local function startScan()
+    if scanning then return end
+    scanning=true
+    btnStart.Text="扫描中..."
+    btnStart.BackgroundColor3=Color3.new(0.8,0.5,0.1)
+    crosshair.Visible=true
+    btnConfirm.Active=true
+
+    scanConn=RunService.Heartbeat:Connect(function()
         local tgt
         if selectMode=="player"then
             tgt=getPlayerAtCenter()
@@ -217,29 +266,38 @@ local function startPicking()
                 else
                     pickHL.Parent=tgt
                 end
+                infoLabel.Text="锁定: "..tgt.Name
+            else
+                infoLabel.Text="未扫到目标"
             end
         end
     end)
 end
 
-local function stopPicking()
-    if pickConn then pickConn:Disconnect()pickConn=nil end
-    picking=false
-    btnPick.Text="开始选择"
-    btnPick.BackgroundColor3=Color3.new(0.1,0.6,0.2)
+local function stopScan()
+    if scanConn then scanConn:Disconnect()scanConn=nil end
+    scanning=false
+    btnStart.Text="开始扫描"
+    btnStart.BackgroundColor3=Color3.new(0.1,0.6,0.2)
+    crosshair.Visible=false
+    btnConfirm.Active=false
     clearHL()
+    hoverTgt=nil
 end
 
 local function confirmPick()
-    if not hoverTgt then return end
+    if not hoverTgt then
+        infoLabel.Text="没有可确认的目标"
+        return
+    end
     if selectMode=="player"then
         getgenv().NDS_Selector.player=hoverTgt
-        infoLabel.Text="玩家: "..hoverTgt.Name
+        infoLabel.Text="已选玩家: "..hoverTgt.Name
     else
         getgenv().NDS_Selector.object=hoverTgt
-        infoLabel.Text="物件: "..hoverTgt.Name
+        infoLabel.Text="已选物件: "..hoverTgt.Name
     end
-    stopPicking()
+    stopScan()
 end
 
 btnMode.MouseButton1Click:Connect(function()
@@ -253,18 +311,25 @@ btnMode.MouseButton1Click:Connect(function()
         btnMode.BackgroundColor3=Color3.new(0.2,0.4,0.8)
     end
     getgenv().NDS_Selector.mode=selectMode
+    stopScan()
 end)
 
-btnPick.MouseButton1Click:Connect(function()
-    if picking then
-        confirmPick()
+btnStart.MouseButton1Click:Connect(function()
+    if scanning then
+        stopScan()
     else
-        startPicking()
+        startScan()
+    end
+end)
+
+btnConfirm.MouseButton1Click:Connect(function()
+    if scanning then
+        confirmPick()
     end
 end)
 
 btnClose.MouseButton1Click:Connect(function()
-    stopPicking()
+    stopScan()
     gui:Destroy()
 end)
 
