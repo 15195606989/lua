@@ -1,41 +1,44 @@
 --[[
-Vortex.lua - 本地漩涡（带功能面板）
-作用：把周围未固定物体卷向自己，仅本地生效。
-性能优化：缓存候选部件列表，每 0.5 秒刷新一次，Heartbeat 只遍历缓存，避免每帧全图遍历。
+Vortex.lua - 本地漩涡（带投掷模式）
+作用：把周围未固定物体卷向自己或投掷向选中目标。
+投掷模式：吸引的物体改为朝 getgenv().NDS_Selector.player 直线飞，同时直接推目标角色。
+性能优化：缓存候选部件，每 0.5 秒刷新一次。
 
 【变量表】
 plr              LocalPlayer
 char             角色模型
-root             HumanoidRootPart（漩涡中心）
+root             HumanoidRootPart
 RS               RunService
 UIS              UserInputService
 gui              ScreenGui
 btn              开关按钮
 panel            功能面板
 vortexOn         漩涡是否开启
+throwMode        投掷模式：物体飞向选中目标
 conn             Heartbeat 连接
-affectedParts    记录被吸过的部件，关闭时清零速度
-cachedParts      缓存的可吸引部件列表
+affectedParts    被吸部件表
+cachedParts      缓存的可吸引部件
 lastCache        上次刷新缓存的时间
-radius           吸引半径（可调）
-strength         吸引强度（可调）
-showHighlight    是否高亮被吸物体
-highlights       记录部件对应的 Highlight 实例
+radius           吸引半径
+strength         吸引强度
+showHighlight    是否高亮
+highlights       高亮实例表
+targetPlayer     投掷目标（从 NDS_Selector 读取）
 
 【代码结构】
-1. 初始化玩家/角色/服务
-2. 清理旧 UI
-3. 创建开关按钮
-4. 创建右侧功能面板（范围±、强度±、高亮开关）
-5. isInChar() 判断部件是否在自己角色上
-6. refreshCache() 定时刷新候选部件列表
-7. startVortex() 开启漩涡（Heartbeat 只遍历缓存）
-8. stopVortex() 关闭并清零速度 + 清高亮
-9. 按钮事件绑定
+1. 初始化
+2. 创建开关按钮 + 功能面板
+3. isInChar() 判断部件是否在自己角色上
+4. refreshCache() 刷新候选部件
+5. getTarget() 读取选中目标，校验是否有效
+6. setHighlight()/clearHighlights() 高亮管理
+7. startVortex() 主循环：普通模式绕圈，投掷模式飞向目标
+8. stopVortex() 关闭清零
+9. 长按按钮 + 投掷开关绑定
 10. 角色重生重置
 
 【依赖】
-无。
+Selector.lua（读取 getgenv().NDS_Selector.player 作为投掷目标）
 ]]
 
 local plr=game.Players.LocalPlayer
@@ -50,7 +53,6 @@ gui.Name="VORTEX_UI"
 gui.Parent=plr.PlayerGui
 gui.ResetOnSpawn=false
 
--- 开关按钮
 local btn=Instance.new("TextButton")
 btn.Size=UDim2.new(0,100,0,40)
 btn.Position=UDim2.new(0,10,0.5,-20)
@@ -63,9 +65,8 @@ btn.TextSize=12
 btn.Font=Enum.Font.GothamBold
 btn.Parent=gui
 
--- 功能面板
 local panel=Instance.new("Frame")
-panel.Size=UDim2.new(0,130,0,160)
+panel.Size=UDim2.new(0,130,0,190)
 panel.Position=UDim2.new(1,-140,0,115)
 panel.BackgroundColor3=Color3.new(0.08,0.1,0.16)
 panel.BackgroundTransparency=0.1
@@ -175,9 +176,21 @@ btnHL.TextSize=10
 btnHL.Font=Enum.Font.GothamSemibold
 btnHL.Parent=panel
 
+local btnThrow=Instance.new("TextButton")
+btnThrow.Size=UDim2.new(0.9,0,0,24)
+btnThrow.Position=UDim2.new(0.05,0,0,140)
+btnThrow.BackgroundColor3=Color3.new(0.5,0.1,0.1)
+btnThrow.BackgroundTransparency=0.3
+btnThrow.BorderSizePixel=0
+btnThrow.Text="💥 投掷: 关"
+btnThrow.TextColor3=Color3.new(1,1,1)
+btnThrow.TextSize=10
+btnThrow.Font=Enum.Font.GothamSemibold
+btnThrow.Parent=panel
+
 local infoLabel=Instance.new("TextLabel")
 infoLabel.Size=UDim2.new(1,0,0,16)
-infoLabel.Position=UDim2.new(0,0,0,140)
+infoLabel.Position=UDim2.new(0,0,0,168)
 infoLabel.Text="吸引: 0"
 infoLabel.TextColor3=Color3.new(0.7,0.7,0.7)
 infoLabel.TextSize=9
@@ -185,6 +198,7 @@ infoLabel.BackgroundTransparency=1
 infoLabel.Parent=panel
 
 local vortexOn=false
+local throwMode=false
 local conn=nil
 local affectedParts={}
 local cachedParts={}
@@ -193,13 +207,14 @@ local radius=50
 local strength=80
 local showHighlight=false
 local highlights={}
+local pushTarget=nil
+local pushConn=nil
 
 local function isInChar(part)
     for _,c in pairs(char:GetDescendants())do if c==part then return true end end
     return false
 end
 
--- 刷新候选部件列表（每0.5秒调用一次，避免每帧全图遍历）
 local function refreshCache()
     cachedParts={}
     for _,p in pairs(workspace:GetDescendants())do
@@ -209,7 +224,17 @@ local function refreshCache()
     end
 end
 
--- 清除所有高亮
+-- 读取选中目标，校验有效性
+local function getTarget()
+    local sel=getgenv().NDS_Selector
+    if not sel or not sel.player then return nil end
+    local p=sel.player
+    if not p.Parent or not p.Character then return nil end
+    local hrp=p.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+    return p,hrp
+end
+
 local function clearHighlights()
     for part,hl in pairs(highlights)do
         if hl then hl:Destroy() end
@@ -217,7 +242,6 @@ local function clearHighlights()
     highlights={}
 end
 
--- 给部件加/更新高亮
 local function setHighlight(part)
     if highlights[part] then return end
     local hl=Instance.new("Highlight")
@@ -231,6 +255,27 @@ local function setHighlight(part)
     highlights[part]=hl
 end
 
+-- 给目标角色持续施加推力（投掷模式下开启）
+local function startPush()
+    if pushConn then pushConn:Disconnect() end
+    pushConn=RS.Heartbeat:Connect(function()
+        if not throwMode or not vortexOn then return end
+        local p,hrp=getTarget()
+        if not hrp then return end
+        local dir=(hrp.Position-root.Position)
+        local mag=dir.Magnitude
+        if mag>0.1 then
+            local dirU=dir.Unit
+            hrp.AssemblyLinearVelocity=dirU*(strength*2)+Vector3.new(0,strength*0.5,0)
+            hrp.AssemblyAngularVelocity=Vector3.new(math.random(-10,10),math.random(-10,10),math.random(-10,10))
+        end
+    end)
+end
+
+local function stopPush()
+    if pushConn then pushConn:Disconnect() pushConn=nil end
+end
+
 local function startVortex()
     conn=RS.Heartbeat:Connect(function()
         if not root or not root.Parent then return end
@@ -241,20 +286,33 @@ local function startVortex()
         end
         local center=root.Position
         local count=0
+        local tgtP,tgtHRP=nil,nil
+        if throwMode then
+            tgtP,tgtHRP=getTarget()
+        end
         for _,p in pairs(cachedParts)do
             if p and p.Parent then
                 local dir=p.Position-center
                 local dist=dir.Magnitude
                 if dist>2 and dist<radius then
-                    local horiz=Vector3.new(dir.X,0,dir.Z)
-                    if horiz.Magnitude>0.1 then
-                        local tangent=Vector3.new(-horiz.Z,0,horiz.X).Unit
-                        local toward=(center-p.Position).Unit
-                        p.AssemblyLinearVelocity=tangent*strength+toward*(strength*0.25)+Vector3.new(0,strength*0.12,0)
-                        affectedParts[p]=true
-                        if showHighlight then setHighlight(p) end
-                        count=count+1
+                    if throwMode and tgtHRP then
+                        -- 投掷模式：朝目标直线飞
+                        local toTgt=(tgtHRP.Position-p.Position)
+                        if toTgt.Magnitude>0.1 then
+                            p.AssemblyLinearVelocity=toTgt.Unit*(strength*3)+Vector3.new(0,strength*0.3,0)
+                        end
+                    else
+                        -- 普通漩涡：绕圈
+                        local horiz=Vector3.new(dir.X,0,dir.Z)
+                        if horiz.Magnitude>0.1 then
+                            local tangent=Vector3.new(-horiz.Z,0,horiz.X).Unit
+                            local toward=(center-p.Position).Unit
+                            p.AssemblyLinearVelocity=tangent*strength+toward*(strength*0.25)+Vector3.new(0,strength*0.12,0)
+                        end
                     end
+                    affectedParts[p]=true
+                    if showHighlight then setHighlight(p) end
+                    count=count+1
                 end
             end
         end
@@ -264,6 +322,7 @@ end
 
 local function stopVortex()
     if conn then conn:Disconnect() conn=nil end
+    stopPush()
     for p,_ in pairs(affectedParts)do
         if p and p.Parent then pcall(function()
             p.AssemblyLinearVelocity=Vector3.new(0,0,0)
@@ -272,14 +331,13 @@ local function stopVortex()
     end
     affectedParts={}
     clearHighlights()
-    if root and root.Parent then pcall(function()
+    if root and  root.Parent then pcall(function()
         root.AssemblyLinearVelocity=Vector3.new(0,0,0)
         root.AssemblyAngularVelocity=Vector3.new(0,0,0)
     end) end
     infoLabel.Text="吸引: 0"
 end
 
--- 长按支持
 local function setupHold(b,cb)
     local holding=false
     b.MouseButton1Down:Connect(function()
@@ -326,6 +384,19 @@ btnHL.MouseButton1Click:Connect(function()
     end
 end)
 
+btnThrow.MouseButton1Click:Connect(function()
+    throwMode=not throwMode
+    if throwMode then
+        btnThrow.Text="💥 投掷: 开"
+        btnThrow.BackgroundColor3=Color3.new(0.1,0.6,0.3)
+        if vortexOn then startPush() end
+    else
+        btnThrow.Text="💥 投掷: 关"
+        btnThrow.BackgroundColor3=Color3.new(0.5,0.1,0.1)
+        stopPush()
+    end
+end)
+
 btn.MouseButton1Click:Connect(function()
     vortexOn=not vortexOn
     if vortexOn then
@@ -335,6 +406,7 @@ btn.MouseButton1Click:Connect(function()
         refreshCache()
         lastCache=tick()
         startVortex()
+        if throwMode then startPush() end
     else
         btn.Text="🌀 漩涡: 关"
         btn.BackgroundColor3=Color3.new(0.4,0.1,0.6)
@@ -347,8 +419,11 @@ plr.CharacterAdded:Connect(function(c)
     char=c
     root=c:WaitForChild("HumanoidRootPart")
     vortexOn=false
+    throwMode=false
     btn.Text="🌀 漩涡: 关"
     btn.BackgroundColor3=Color3.new(0.4,0.1,0.6)
+    btnThrow.Text="💥 投掷: 关"
+    btnThrow.BackgroundColor3=Color3.new(0.5,0.1,0.1)
 end)
 
--- Vortex.lua 结束 | 共 253 行
+-- Vortex.lua 结束 | 共 339 行
