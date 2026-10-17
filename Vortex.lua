@@ -1,44 +1,38 @@
 --[[
-Vortex.lua - 本地漩涡（带投掷模式）
-作用：把周围未固定物体卷向自己或投掷向选中目标。
-投掷模式：吸引的物体改为朝 getgenv().NDS_Selector.player 直线飞，同时直接推目标角色。
-性能优化：缓存候选部件，每 0.5 秒刷新一次。
-
+Vortex.lua - 本地漩涡（独立面板 + 投掷目标框）
+作用：吸引周围物体；投掷模式下把物体猛烈砸向选中目标，并给目标画黄框。
 【变量表】
-plr              LocalPlayer
-char             角色模型
-root             HumanoidRootPart
-RS               RunService
-UIS              UserInputService
-gui              ScreenGui
-btn              开关按钮
-panel            功能面板
-vortexOn         漩涡是否开启
-throwMode        投掷模式：物体飞向选中目标
-conn             Heartbeat 连接
-affectedParts    被吸部件表
-cachedParts      缓存的可吸引部件
-lastCache        上次刷新缓存的时间
-radius           吸引半径
-strength         吸引强度
-showHighlight    是否高亮
-highlights       高亮实例表
-targetPlayer     投掷目标（从 NDS_Selector 读取）
-
+plr, char, root   玩家/角色/中心
+RS, UIS           RunService, UserInputService
+gui               ScreenGui
+miniIcon          右上角缩起图标
+panel             功能面板
+btnVortex         面板内的漩涡开关
+vortexOn          漩涡是否开启
+throwMode         投掷是否开启
+conn              Heartbeat 连接
+affectedParts     被吸物体表
+cachedParts       缓存部件
+lastCache         缓存刷新时间
+radius, strength  范围/强度
+showHighlight     是否高亮被吸物体
+highlights        被吸物体高亮表
+targetPlayer      当前投掷目标
+targetHL          目标黄框
+thrownParts       已投掷过的物体，防止每帧重复施加
 【代码结构】
-1. 初始化
-2. 创建开关按钮 + 功能面板
-3. isInChar() 判断部件是否在自己角色上
-4. refreshCache() 刷新候选部件
-5. getTarget() 读取选中目标，校验是否有效
-6. setHighlight()/clearHighlights() 高亮管理
-7. startVortex() 主循环：普通模式绕圈，投掷模式飞向目标
-8. stopVortex() 关闭清零
-9. 长按按钮 + 投掷开关绑定
-10. 角色重生重置
-
-【依赖】
-Selector.lua（读取 getgenv().NDS_Selector.player 作为投掷目标）
+1. 基础初始化 + 清理旧UI
+2. 创建 miniIcon 与 panel
+3. 面板拖动 + 折叠逻辑
+4. isInChar() 判断部件是否在自己身上
+5. refreshCache() 刷新候选部件
+6. getTarget() 获取选中的目标
+7. clearHighlights/setHighlight() 被吸物体高亮
+8. clearTargetHL/setTargetHL() 目标黄框
+9. startVortex() 主逻辑：普通模式绕圈，投掷模式给爆发力
+10. stopVortex() 关闭清理
+11. 按钮绑定与角色重生
+【依赖】Selector.lua
 ]]
 
 local plr=game.Players.LocalPlayer
@@ -53,26 +47,25 @@ gui.Name="VORTEX_UI"
 gui.Parent=plr.PlayerGui
 gui.ResetOnSpawn=false
 
-local btn=Instance.new("TextButton")
-btn.Size=UDim2.new(0,100,0,40)
-btn.Position=UDim2.new(0,10,0.5,-20)
-btn.BackgroundColor3=Color3.new(0.4,0.1,0.6)
-btn.BackgroundTransparency=0.2
-btn.BorderSizePixel=0
-btn.Text="🌀 漩涡: 关"
-btn.TextColor3=Color3.new(1,1,1)
-btn.TextSize=12
-btn.Font=Enum.Font.GothamBold
-btn.Parent=gui
+local miniIcon=Instance.new("TextButton")
+miniIcon.Size=UDim2.new(0,28,0,28)
+miniIcon.Position=UDim2.new(1,-35,0,115)
+miniIcon.BackgroundColor3=Color3.new(0.4,0.1,0.6)
+miniIcon.BackgroundTransparency=0.2
+miniIcon.BorderSizePixel=0
+miniIcon.Text="🌀"
+miniIcon.TextSize=16
+miniIcon.TextColor3=Color3.new(1,1,1)
+miniIcon.Font=Enum.Font.GothamBold
+miniIcon.Parent=gui
 
 local panel=Instance.new("Frame")
-panel.Size=UDim2.new(0,130,0,190)
+panel.Size=UDim2.new(0,130,0,180)
 panel.Position=UDim2.new(1,-140,0,115)
 panel.BackgroundColor3=Color3.new(0.08,0.1,0.16)
 panel.BackgroundTransparency=0.1
 panel.BorderSizePixel=1
 panel.Parent=gui
-panel.Visible=false
 
 local title=Instance.new("TextButton")
 title.Size=UDim2.new(1,0,0,25)
@@ -82,6 +75,26 @@ title.TextSize=11
 title.Font=Enum.Font.GothamBold
 title.BackgroundTransparency=1
 title.Parent=panel
+
+local btnMin=Instance.new("TextButton")
+btnMin.Size=UDim2.new(0,25,0,25)
+btnMin.Position=UDim2.new(1,-55,0,0)
+btnMin.BackgroundTransparency=1
+btnMin.Text="−"
+btnMin.TextColor3=Color3.new(1,0.8,0.3)
+btnMin.TextSize=16
+btnMin.Font=Enum.Font.GothamBold
+btnMin.Parent=panel
+
+local btnClose=Instance.new("TextButton")
+btnClose.Size=UDim2.new(0,25,0,25)
+btnClose.Position=UDim2.new(1,-28,0,0)
+btnClose.BackgroundTransparency=1
+btnClose.Text="✕"
+btnClose.TextColor3=Color3.new(1,0.3,0.3)
+btnClose.TextSize=14
+btnClose.Font=Enum.Font.GothamBold
+btnClose.Parent=panel
 
 local dragging=false
 local dragStart=nil
@@ -106,91 +119,103 @@ UIS.InputEnded:Connect(function(input)
     end
 end)
 
+local btnVortex=Instance.new("TextButton")
+btnVortex.Size=UDim2.new(0.9,0,0,26)
+btnVortex.Position=UDim2.new(0.05,0,0,28)
+btnVortex.BackgroundColor3=Color3.new(0.6,0.1,0.1)
+btnVortex.BackgroundTransparency=0.3
+btnVortex.BorderSizePixel=0
+btnVortex.Text="🔴 漩涡: 关"
+btnVortex.TextColor3=Color3.new(1,1,1)
+btnVortex.TextSize=11
+btnVortex.Font=Enum.Font.GothamSemibold
+btnVortex.Parent=panel
+
 local radiusLabel=Instance.new("TextLabel")
-radiusLabel.Size=UDim2.new(1,0,0,18)
-radiusLabel.Position=UDim2.new(0,0,0,26)
+radiusLabel.Size=UDim2.new(1,0,0,16)
+radiusLabel.Position=UDim2.new(0,0,0,58)
 radiusLabel.Text="范围: 50"
 radiusLabel.TextColor3=Color3.new(0.8,0.9,1)
-radiusLabel.TextSize=10
+radiusLabel.TextSize=9
 radiusLabel.BackgroundTransparency=1
 radiusLabel.Parent=panel
 
 local btnRMinus=Instance.new("TextButton")
-btnRMinus.Size=UDim2.new(0,25,0,20)
-btnRMinus.Position=UDim2.new(0.5,-35,0,46)
+btnRMinus.Size=UDim2.new(0,25,0,18)
+btnRMinus.Position=UDim2.new(0.5,-35,0,76)
 btnRMinus.Text="−"
 btnRMinus.TextColor3=Color3.new(1,1,1)
-btnRMinus.TextSize=14
+btnRMinus.TextSize=12
 btnRMinus.BackgroundColor3=Color3.new(0.6,0.1,0.1)
 btnRMinus.BorderSizePixel=0
 btnRMinus.Parent=panel
 
 local btnRPlus=Instance.new("TextButton")
-btnRPlus.Size=UDim2.new(0,25,0,20)
-btnRPlus.Position=UDim2.new(0.5,10,0,46)
+btnRPlus.Size=UDim2.new(0,25,0,18)
+btnRPlus.Position=UDim2.new(0.5,10,0,76)
 btnRPlus.Text="+"
 btnRPlus.TextColor3=Color3.new(1,1,1)
-btnRPlus.TextSize=14
+btnRPlus.TextSize=12
 btnRPlus.BackgroundColor3=Color3.new(0.1,0.6,0.1)
 btnRPlus.BorderSizePixel=0
 btnRPlus.Parent=panel
 
 local strengthLabel=Instance.new("TextLabel")
-strengthLabel.Size=UDim2.new(1,0,0,18)
-strengthLabel.Position=UDim2.new(0,0,0,68)
+strengthLabel.Size=UDim2.new(1,0,0,16)
+strengthLabel.Position=UDim2.new(0,0,0,98)
 strengthLabel.Text="强度: 80"
 strengthLabel.TextColor3=Color3.new(0.8,0.9,1)
-strengthLabel.TextSize=10
+strengthLabel.TextSize=9
 strengthLabel.BackgroundTransparency=1
 strengthLabel.Parent=panel
 
 local btnSMinus=Instance.new("TextButton")
-btnSMinus.Size=UDim2.new(0,25,0,20)
-btnSMinus.Position=UDim2.new(0.5,-35,0,88)
+btnSMinus.Size=UDim2.new(0,25,0,18)
+btnSMinus.Position=UDim2.new(0.5,-35,0,116)
 btnSMinus.Text="−"
 btnSMinus.TextColor3=Color3.new(1,1,1)
-btnSMinus.TextSize=14
+btnSMinus.TextSize=12
 btnSMinus.BackgroundColor3=Color3.new(0.6,0.1,0.1)
 btnSMinus.BorderSizePixel=0
 btnSMinus.Parent=panel
 
 local btnSPlus=Instance.new("TextButton")
-btnSPlus.Size=UDim2.new(0,25,0,20)
-btnSPlus.Position=UDim2.new(0.5,10,0,88)
+btnSPlus.Size=UDim2.new(0,25,0,18)
+btnSPlus.Position=UDim2.new(0.5,10,0,116)
 btnSPlus.Text="+"
 btnSPlus.TextColor3=Color3.new(1,1,1)
-btnSPlus.TextSize=14
+btnSPlus.TextSize=12
 btnSPlus.BackgroundColor3=Color3.new(0.1,0.6,0.1)
 btnSPlus.BorderSizePixel=0
 btnSPlus.Parent=panel
 
 local btnHL=Instance.new("TextButton")
-btnHL.Size=UDim2.new(0.9,0,0,24)
-btnHL.Position=UDim2.new(0.05,0,0,112)
+btnHL.Size=UDim2.new(0.45,0,0,22)
+btnHL.Position=UDim2.new(0.05,0,0,140)
 btnHL.BackgroundColor3=Color3.new(0.3,0.3,0.6)
 btnHL.BackgroundTransparency=0.3
 btnHL.BorderSizePixel=0
 btnHL.Text="高亮: 关"
 btnHL.TextColor3=Color3.new(1,1,1)
-btnHL.TextSize=10
+btnHL.TextSize=9
 btnHL.Font=Enum.Font.GothamSemibold
 btnHL.Parent=panel
 
 local btnThrow=Instance.new("TextButton")
-btnThrow.Size=UDim2.new(0.9,0,0,24)
-btnThrow.Position=UDim2.new(0.05,0,0,140)
+btnThrow.Size=UDim2.new(0.45,0,0,22)
+btnThrow.Position=UDim2.new(0.5,0,0,140)
 btnThrow.BackgroundColor3=Color3.new(0.5,0.1,0.1)
 btnThrow.BackgroundTransparency=0.3
 btnThrow.BorderSizePixel=0
 btnThrow.Text="💥 投掷: 关"
 btnThrow.TextColor3=Color3.new(1,1,1)
-btnThrow.TextSize=10
+btnThrow.TextSize=9
 btnThrow.Font=Enum.Font.GothamSemibold
 btnThrow.Parent=panel
 
 local infoLabel=Instance.new("TextLabel")
-infoLabel.Size=UDim2.new(1,0,0,16)
-infoLabel.Position=UDim2.new(0,0,0,168)
+infoLabel.Size=UDim2.new(1,0,0,14)
+infoLabel.Position=UDim2.new(0,0,0,166)
 infoLabel.Text="吸引: 0"
 infoLabel.TextColor3=Color3.new(0.7,0.7,0.7)
 infoLabel.TextSize=9
@@ -207,8 +232,26 @@ local radius=50
 local strength=80
 local showHighlight=false
 local highlights={}
-local pushTarget=nil
-local pushConn=nil
+local targetPlayer=nil
+local targetHL=nil
+local thrownParts={}
+
+btnMin.MouseButton1Click:Connect(function()
+    panel.Visible=false
+    miniIcon.Visible=true
+end)
+
+miniIcon.MouseButton1Click:Connect(function()
+    panel.Visible=true
+    miniIcon.Visible=false
+end)
+
+btnClose.MouseButton1Click:Connect(function()
+    if conn then conn:Disconnect() end
+    clearHighlights()
+    clearTargetHL()
+    gui:Destroy()
+end)
 
 local function isInChar(part)
     for _,c in pairs(char:GetDescendants())do if c==part then return true end end
@@ -217,6 +260,7 @@ end
 
 local function refreshCache()
     cachedParts={}
+    thrownParts={}
     for _,p in pairs(workspace:GetDescendants())do
         if p:IsA("BasePart") and not p.Anchored and p~=root and not isInChar(p) then
             table.insert(cachedParts,p)
@@ -224,15 +268,13 @@ local function refreshCache()
     end
 end
 
--- 读取选中目标，校验有效性
 local function getTarget()
     local sel=getgenv().NDS_Selector
     if not sel or not sel.player then return nil end
     local p=sel.player
     if not p.Parent or not p.Character then return nil end
-    local hrp=p.Character:FindFirstChild("HumanoidRootPart")
-    if not hrp then return nil end
-    return p,hrp
+    if not p.Character:FindFirstChild("HumanoidRootPart") then return nil end
+    return p
 end
 
 local function clearHighlights()
@@ -255,27 +297,24 @@ local function setHighlight(part)
     highlights[part]=hl
 end
 
--- 给目标角色持续施加推力（投掷模式下开启）
-local function startPush()
-    if pushConn then pushConn:Disconnect() end
-    pushConn=RS.Heartbeat:Connect(function()
-        if not throwMode or not vortexOn then return end
-        local p,hrp=getTarget()
-        if not hrp then return end
-        local dir=(hrp.Position-root.Position)
-        local mag=dir.Magnitude
-        if mag>0.1 then
-            local dirU=dir.Unit
-            hrp.AssemblyLinearVelocity=dirU*(strength*2)+Vector3.new(0,strength*0.5,0)
-            hrp.AssemblyAngularVelocity=Vector3.new(math.random(-10,10),math.random(-10,10),math.random(-10,10))
-        end
-    end)
+local function clearTargetHL()
+    if targetHL then targetHL:Destroy() targetHL=nil end
 end
 
-local function stopPush()
-    if pushConn then pushConn:Disconnect() pushConn=nil end
+local function setTargetHL(p)
+    clearTargetHL()
+    if not p or not p.Character then return end
+    targetHL=Instance.new("Highlight")
+    targetHL.Adornee=p.Character
+    targetHL.FillColor=Color3.new(1,0.8,0)
+    targetHL.OutlineColor=Color3.new(1,0.8,0)
+    targetHL.FillTransparency=0.7
+    targetHL.OutlineTransparency=0.2
+    targetHL.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop
+    targetHL.Parent=p.Character
 end
 
+-- 第 1 段结束
 local function startVortex()
     conn=RS.Heartbeat:Connect(function()
         if not root or not root.Parent then return end
@@ -286,20 +325,34 @@ local function startVortex()
         end
         local center=root.Position
         local count=0
-        local tgtP,tgtHRP=nil,nil
+        local tgt=nil
         if throwMode then
-            tgtP,tgtHRP=getTarget()
+            tgt=getTarget()
+            if tgt and tgt.Character then
+                if targetPlayer~=tgt then
+                    targetPlayer=tgt
+                    setTargetHL(tgt)
+                end
+            else
+                if targetPlayer then clearTargetHL() targetPlayer=nil end
+            end
         end
         for _,p in pairs(cachedParts)do
             if p and p.Parent then
                 local dir=p.Position-center
                 local dist=dir.Magnitude
                 if dist>2 and dist<radius then
-                    if throwMode and tgtHRP then
-                        -- 投掷模式：朝目标直线飞
-                        local toTgt=(tgtHRP.Position-p.Position)
-                        if toTgt.Magnitude>0.1 then
-                            p.AssemblyLinearVelocity=toTgt.Unit*(strength*3)+Vector3.new(0,strength*0.3,0)
+                    if throwMode and tgt and tgt.Character then
+                        -- 投掷模式：一次性爆发力飞向目标
+                        if not thrownParts[p] then
+                            thrownParts[p]=true
+                            local hrp=tgt.Character:FindFirstChild("HumanoidRootPart")
+                            if hrp then
+                                local toTgt=(hrp.Position-p.Position)
+                                if toTgt.Magnitude>0.1 then
+                                    p.AssemblyLinearVelocity=toTgt.Unit*(strength*3)+Vector3.new(0,strength*0.5,0)
+                                end
+                            end
                         end
                     else
                         -- 普通漩涡：绕圈
@@ -309,8 +362,8 @@ local function startVortex()
                             local toward=(center-p.Position).Unit
                             p.AssemblyLinearVelocity=tangent*strength+toward*(strength*0.25)+Vector3.new(0,strength*0.12,0)
                         end
+                        affectedParts[p]=true
                     end
-                    affectedParts[p]=true
                     if showHighlight then setHighlight(p) end
                     count=count+1
                 end
@@ -322,7 +375,7 @@ end
 
 local function stopVortex()
     if conn then conn:Disconnect() conn=nil end
-    stopPush()
+    clearTargetHL()
     for p,_ in pairs(affectedParts)do
         if p and p.Parent then pcall(function()
             p.AssemblyLinearVelocity=Vector3.new(0,0,0)
@@ -331,7 +384,7 @@ local function stopVortex()
     end
     affectedParts={}
     clearHighlights()
-    if root and  root.Parent then pcall(function()
+    if root and root.Parent then pcall(function()
         root.AssemblyLinearVelocity=Vector3.new(0,0,0)
         root.AssemblyAngularVelocity=Vector3.new(0,0,0)
     end) end
@@ -352,25 +405,10 @@ local function setupHold(b,cb)
     b.MouseLeave:Connect(function() holding=false end)
 end
 
-setupHold(btnRMinus,function()
-    radius=math.max(10,radius-5)
-    radiusLabel.Text="范围: "..radius
-end)
-
-setupHold(btnRPlus,function()
-    radius=math.min(300,radius+5)
-    radiusLabel.Text="范围: "..radius
-end)
-
-setupHold(btnSMinus,function()
-    strength=math.max(10,strength-10)
-    strengthLabel.Text="强度: "..strength
-end)
-
-setupHold(btnSPlus,function()
-    strength=math.min(500,strength+10)
-    strengthLabel.Text="强度: "..strength
-end)
+setupHold(btnRMinus,function() radius=math.max(10,radius-5) radiusLabel.Text="范围: "..radius end)
+setupHold(btnRPlus,function() radius=math.min(300,radius+5) radiusLabel.Text="范围: "..radius end)
+setupHold(btnSMinus,function() strength=math.max(10,strength-10) strengthLabel.Text="强度: "..strength end)
+setupHold(btnSPlus,function() strength=math.min(500,strength+10) strengthLabel.Text="强度: "..strength end)
 
 btnHL.MouseButton1Click:Connect(function()
     showHighlight=not showHighlight
@@ -389,27 +427,26 @@ btnThrow.MouseButton1Click:Connect(function()
     if throwMode then
         btnThrow.Text="💥 投掷: 开"
         btnThrow.BackgroundColor3=Color3.new(0.1,0.6,0.3)
-        if vortexOn then startPush() end
     else
         btnThrow.Text="💥 投掷: 关"
         btnThrow.BackgroundColor3=Color3.new(0.5,0.1,0.1)
-        stopPush()
+        clearTargetHL()
+        targetPlayer=nil
+        thrownParts={}
     end
 end)
 
-btn.MouseButton1Click:Connect(function()
+btnVortex.MouseButton1Click:Connect(function()
     vortexOn=not vortexOn
     if vortexOn then
-        btn.Text="🌀 漩涡: 开"
-        btn.BackgroundColor3=Color3.new(0,0.5,0.1)
-        panel.Visible=true
+        btnVortex.Text="🟢 漩涡: 开"
+        btnVortex.BackgroundColor3=Color3.new(0,0.5,0.1)
         refreshCache()
         lastCache=tick()
         startVortex()
-        if throwMode then startPush() end
     else
-        btn.Text="🌀 漩涡: 关"
-        btn.BackgroundColor3=Color3.new(0.4,0.1,0.6)
+        btnVortex.Text="🔴 漩涡: 关"
+        btnVortex.BackgroundColor3=Color3.new(0.6,0.1,0.1)
         stopVortex()
     end
 end)
@@ -420,10 +457,10 @@ plr.CharacterAdded:Connect(function(c)
     root=c:WaitForChild("HumanoidRootPart")
     vortexOn=false
     throwMode=false
-    btn.Text="🌀 漩涡: 关"
-    btn.BackgroundColor3=Color3.new(0.4,0.1,0.6)
+    btnVortex.Text="🔴 漩涡: 关"
+    btnVortex.BackgroundColor3=Color3.new(0.6,0.1,0.1)
     btnThrow.Text="💥 投掷: 关"
     btnThrow.BackgroundColor3=Color3.new(0.5,0.1,0.1)
 end)
 
--- Vortex.lua 结束 | 共 339 行
+-- Vortex.lua 结束 | 共 365 行
