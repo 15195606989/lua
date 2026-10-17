@@ -1,5 +1,4 @@
 -- Vortex.lua - 本地漩涡（目标风暴 / 引力保留）
--- 普通模式吸物体绕自己；投掷模式把范围内物体拉向目标，同时保留漩涡引力。
 local plr=game.Players.LocalPlayer
 local char=plr.Character or plr.CharacterAdded:Wait()
 local root=char:WaitForChild("HumanoidRootPart")
@@ -143,15 +142,36 @@ local function startVortex()
             if p and p.Parent then
                 local dir=p.Position-center local dist=dir.Magnitude
                 if dist>2 and dist<radius then
-                    local horiz=Vector3.new(dir.X,0,dir.Z) local tangent=Vector3.new(-horiz.Z,0,horiz.X).Unit
-                    local toward=(center-p.Position).Unit
-                    local baseVel=tangent*strength+toward*(strength*0.25)+Vector3.new(0,strength*0.12,0)
                     if throwMode and tgt and tgt.Character then
                         local hrp=tgt.Character:FindFirstChild("HumanoidRootPart")
-                        if hrp then p.AssemblyLinearVelocity=baseVel+((hrp.Position-p.Position).Unit*strength*3)+Vector3.new(0,strength*0.5,0)
-                        else p.AssemblyLinearVelocity=baseVel end
-                    else p.AssemblyLinearVelocity=baseVel end
-                    p.CanCollide=true affectedParts[p]=true count=count+1
+                        if hrp then
+                            local toTgt=hrp.Position-p.Position
+                            local tDist=toTgt.Magnitude
+                            p.CanCollide=false -- 投掷期间穿墙
+                            if tDist>8 then
+                                -- 距离远：极强拉力飞过去，弱切向力
+                                local pull=toTgt.Unit * strength * 4
+                                local horiz=Vector3.new(dir.X,0,dir.Z)
+                                local tangent=Vector3.new(-horiz.Z,0,horiz.X).Unit * strength * 0.5
+                                p.AssemblyLinearVelocity=pull+tangent+Vector3.new(0,strength*0.5,0)
+                            else
+                                -- 距离近：绕着目标高速旋转刮人
+                                local pDir=p.Position-hrp.Position
+                                local tangent=Vector3.new(-pDir.Z,0,pDir.X).Unit * strength * 2.5
+                                local pull=(hrp.Position-p.Position).Unit * strength * 0.5
+                                p.AssemblyLinearVelocity=tangent+pull+Vector3.new(0,strength*0.2,0)
+                            end
+                        end
+                    else
+                        -- 普通模式
+                        local horiz=Vector3.new(dir.X,0,dir.Z)
+                        local tangent=Vector3.new(-horiz.Z,0,horiz.X).Unit
+                        local toward=(center-p.Position).Unit
+                        p.CanCollide=true
+                        p.AssemblyLinearVelocity=(tangent*strength+toward*(strength*0.25)+Vector3.new(0,strength*0.12,0))
+                        affectedParts[p]=true
+                    end
+                    count=count+1
                 end
             end
         end
