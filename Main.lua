@@ -1,5 +1,5 @@
 local base="https://cdn.jsdelivr.net/gh/15195606989/lua@main/"
-local scripts={"Fly.lua","Speed.lua","ESP.lua","Vortex.lua","Aimbot.lua","Selector.lua"}
+local scripts={"Fly.lua","Speed.lua","ESP.lua","Vortex.lua","Aimbot.lua","Selector.lua","Scanner.lua"}
 game:GetService("StarterGui"):SetCore("SendNotification",{
     Title="NDS 加载中",
     Text="正在加载 "..#scripts.." 个功能...",
