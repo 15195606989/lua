@@ -1,4 +1,4 @@
-local base="https://cdn.jsdelivr.net/gh/15195606989/lua@main/"
+local base="https://raw.githubusercontent.com/15195606989/lua/refs/heads/main/"
 local scripts={"Fly.lua","Speed.lua","ESP.lua","Vortex.lua","Aimbot.lua","Selector.lua","Scanner.lua"}
 game:GetService("StarterGui"):SetCore("SendNotification",{
     Title="NDS 加载中",
